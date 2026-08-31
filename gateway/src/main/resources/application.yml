@@ -1,0 +1,55 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway
+  threads:
+    virtual:
+      enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/rube-goldberg}
+  cloud:
+    gateway:
+      routes:
+        - id: customer-service
+          uri: ${CUSTOMER_SERVICE_URI:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/customers/**
+        - id: restaurant-service
+          uri: ${RESTAURANT_SERVICE_URI:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/restaurants/**
+        - id: availability-service
+          uri: ${AVAILABILITY_SERVICE_URI:http://localhost:8084}
+          predicates:
+            - Path=/api/v1/availability/**
+        - id: reservation-service
+          uri: ${RESERVATION_SERVICE_URI:http://localhost:8085}
+          predicates:
+            - Path=/api/v1/reservations/**
+        - id: waiting-list-service
+          uri: ${WAITING_LIST_SERVICE_URI:http://localhost:8086}
+          predicates:
+            - Path=/api/v1/waiting-list/**
+        - id: analytics-service
+          uri: ${ANALYTICS_SERVICE_URI:http://localhost:8087}
+          predicates:
+            - Path=/api/v1/analytics/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true

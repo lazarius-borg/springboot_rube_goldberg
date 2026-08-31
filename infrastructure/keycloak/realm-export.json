@@ -1,0 +1,51 @@
+{
+  "realm": "rube-goldberg",
+  "enabled": true,
+  "roles": {
+    "realm": [
+      { "name": "CUSTOMER", "description": "Customer role" },
+      { "name": "RESTAURANT_MANAGER", "description": "Restaurant manager role" },
+      { "name": "ADMIN", "description": "Administrator role" }
+    ]
+  },
+  "users": [
+    {
+      "username": "customer1",
+      "enabled": true,
+      "email": "customer1@example.com",
+      "firstName": "Alice",
+      "lastName": "Customer",
+      "credentials": [{ "type": "password", "value": "password" }],
+      "realmRoles": ["CUSTOMER"]
+    },
+    {
+      "username": "manager1",
+      "enabled": true,
+      "email": "manager1@example.com",
+      "firstName": "Bob",
+      "lastName": "Manager",
+      "credentials": [{ "type": "password", "value": "password" }],
+      "realmRoles": ["RESTAURANT_MANAGER"]
+    },
+    {
+      "username": "admin1",
+      "enabled": true,
+      "email": "admin1@example.com",
+      "firstName": "Carol",
+      "lastName": "Admin",
+      "credentials": [{ "type": "password", "value": "password" }],
+      "realmRoles": ["ADMIN"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "rube-goldberg-app",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"]
+    }
+  ]
+}

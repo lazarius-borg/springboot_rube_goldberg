@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Portal - Spring Boot Rube Goldberg</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-4">
+    <header class="pb-3 mb-4 border-bottom d-flex justify-content-between align-items-center">
+        <h2>🍽️ Rube Goldberg Reservations</h2>
+        <div>
+            <span id="userStatus" class="badge bg-secondary">Demo Customer (Alice)</span>
+        </div>
+    </header>
+
+    <div class="row g-4">
+        <!-- 1. Search Availability -->
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">Search Table Availability</div>
+                <div class="card-body">
+                    <form id="searchForm">
+                        <div class="mb-3">
+                            <label class="form-label">Restaurant ID</label>
+                            <input type="text" id="searchRestId" class="form-control" placeholder="UUID (e.g. from Restaurant Service)" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col">
+                                <label class="form-label">Date</label>
+                                <input type="date" id="searchDate" class="form-control" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label">Time</label>
+                                <input type="time" id="searchTime" class="form-control" value="19:00" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label">Guests</label>
+                                <input type="number" id="searchParty" class="form-control" value="4" min="1" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Check Availability</button>
+                    </form>
+                    <div id="searchResult" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Make Reservation -->
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">Book Confirmed Reservation</div>
+                <div class="card-body">
+                    <form id="bookForm">
+                        <div class="mb-3">
+                            <label class="form-label">Restaurant ID</label>
+                            <input type="text" id="bookRestId" class="form-control" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col">
+                                <label class="form-label">Date & Time</label>
+                                <input type="datetime-local" id="bookDateTime" class="form-control" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label">Party Size</label>
+                                <input type="number" id="bookParty" class="form-control" value="4" min="1" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">Instant Guaranteed Booking</button>
+                    </form>
+                    <div id="bookResult" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Join Waiting List -->
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-warning text-dark">Join Fair FIFO Waiting List</div>
+                <div class="card-body">
+                    <form id="waitForm">
+                        <div class="mb-3">
+                            <label class="form-label">Restaurant ID</label>
+                            <input type="text" id="waitRestId" class="form-control" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col">
+                                <label class="form-label">Target Date</label>
+                                <input type="date" id="waitDate" class="form-control" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label">Earliest</label>
+                                <input type="time" id="waitEarliest" class="form-control" value="18:00" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label">Latest</label>
+                                <input type="time" id="waitLatest" class="form-control" value="21:00" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-warning w-100">Join Waiting List</button>
+                    </form>
+                    <div id="waitResult" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
