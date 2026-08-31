@@ -41,8 +41,9 @@ public class ReservationController {
     })
     public ResponseEntity<?> createReservation(@RequestBody CreateReservationRequest req) {
         try {
+            int partySize = req.partySize() != null ? req.partySize() : 2;
             List<TableAllocationEngine.TableCandidate> tables = req.availableTables() != null ? req.availableTables() :
-                    List.of(new TableAllocationEngine.TableCandidate(UUID.randomUUID(), req.partySize()));
+                    List.of(new TableAllocationEngine.TableCandidate(UUID.randomUUID(), partySize));
             List<TableAllocationEngine.CombinationCandidate> combinations = req.combinations() != null ? req.combinations() : List.of();
 
             ReservationEntity reservation = reservationService.createReservation(
@@ -50,9 +51,9 @@ public class ReservationController {
                     req.customerId() != null ? req.customerId() : UUID.randomUUID(),
                     req.customerName() != null ? req.customerName() : "Customer",
                     req.customerEmail() != null ? req.customerEmail() : "customer@example.com",
-                    req.partySize(),
-                    req.startTime(),
-                    req.durationMinutes() > 0 ? req.durationMinutes() : 90,
+                    partySize,
+                    req.startTime() != null ? req.startTime() : Instant.now(),
+                    req.durationMinutes() != null && req.durationMinutes() > 0 ? req.durationMinutes() : 90,
                     tables,
                     combinations
             );
@@ -136,7 +137,7 @@ public class ReservationController {
     }
 
     public record CreateReservationRequest(UUID restaurantId, UUID customerId, String customerName, String customerEmail,
-                                          int partySize, Instant startTime, int durationMinutes,
+                                          Integer partySize, Instant startTime, Integer durationMinutes,
                                           List<TableAllocationEngine.TableCandidate> availableTables,
                                           List<TableAllocationEngine.CombinationCandidate> combinations) {}
 

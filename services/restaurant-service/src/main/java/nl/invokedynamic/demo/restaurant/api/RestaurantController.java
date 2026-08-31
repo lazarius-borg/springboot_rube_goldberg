@@ -48,10 +48,10 @@ public class RestaurantController {
         try {
             RestaurantEntity entity = restaurantService.createRestaurant(
                     req.name(), req.address(), req.timezone(),
-                    req.defaultReservationDurationMinutes() > 0 ? req.defaultReservationDurationMinutes() : 90,
-                    req.minBookingAdvanceMinutes() > 0 ? req.minBookingAdvanceMinutes() : 30,
-                    req.maxBookingHorizonDays() > 0 ? req.maxBookingHorizonDays() : 60,
-                    req.cancellationWindowHours() > 0 ? req.cancellationWindowHours() : 2
+                    req.defaultReservationDurationMinutes() != null && req.defaultReservationDurationMinutes() > 0 ? req.defaultReservationDurationMinutes() : 90,
+                    req.minBookingAdvanceMinutes() != null && req.minBookingAdvanceMinutes() > 0 ? req.minBookingAdvanceMinutes() : 30,
+                    req.maxBookingHorizonDays() != null && req.maxBookingHorizonDays() > 0 ? req.maxBookingHorizonDays() : 60,
+                    req.cancellationWindowHours() != null && req.cancellationWindowHours() > 0 ? req.cancellationWindowHours() : 2
             );
             return ResponseEntity.status(HttpStatus.CREATED).body(entity);
         } catch (IllegalArgumentException e) {
@@ -86,7 +86,7 @@ public class RestaurantController {
     })
     public ResponseEntity<?> addTable(@PathVariable UUID id, @RequestBody CreateTableRequest req) {
         try {
-            RestaurantTableEntity table = restaurantService.addTable(id, req.tableNumber(), req.capacity());
+            RestaurantTableEntity table = restaurantService.addTable(id, req.tableNumber(), req.capacity() != null ? req.capacity() : 2);
             return ResponseEntity.status(HttpStatus.CREATED).body(table);
         } catch (IllegalArgumentException e) {
             ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
@@ -124,9 +124,9 @@ public class RestaurantController {
     }
 
     public record CreateRestaurantRequest(String name, String address, String timezone,
-                                          int defaultReservationDurationMinutes, int minBookingAdvanceMinutes,
-                                          int maxBookingHorizonDays, int cancellationWindowHours) {}
-    public record CreateTableRequest(String tableNumber, int capacity) {}
+                                          Integer defaultReservationDurationMinutes, Integer minBookingAdvanceMinutes,
+                                          Integer maxBookingHorizonDays, Integer cancellationWindowHours) {}
+    public record CreateTableRequest(String tableNumber, Integer capacity) {}
     public record CreateCombinationRequest(String name, List<UUID> tableIds) {}
     public record OpeningHoursConfigDto(List<ScheduleItemDto> schedules) {}
     public record ScheduleItemDto(Integer dayOfWeek, LocalDate specificDate, LocalTime openTime, LocalTime closeTime, boolean isClosed) {}

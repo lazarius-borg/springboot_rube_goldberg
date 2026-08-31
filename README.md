@@ -1,9 +1,9 @@
 # 🍽️ Spring Boot Rube Goldberg Restaurant Reservation Platform
 
-> A production-grade, event-driven microservices showcase built with **Java 26**, **Spring Boot 3.4.3**, **Spring Cloud 2024**, **Apache Kafka**, **Redis**, **PostgreSQL 17**, **Keycloak 26**, and **OpenTelemetry**.
+> A production-grade, event-driven microservices showcase built with **Java 26**, **Spring Boot 4.1.1**, **Spring Cloud 2024**, **Apache Kafka**, **Redis**, **PostgreSQL 17**, **Keycloak 26**, and **OpenTelemetry**.
 
 [![Java 26](https://img.shields.io/badge/Java-26-orange.svg)](https://openjdk.org/)
-[![Spring Boot 3.4.3](https://img.shields.io/badge/Spring%20Boot-3.4.3-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring Boot 4.1.1](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Spring Cloud 2024.0.0](https://img.shields.io/badge/Spring%20Cloud-2024.0.0-blue.svg)](https://spring.io/projects/spring-cloud)
 [![Apache Kafka](https://img.shields.io/badge/Kafka-3.9-black.svg)](https://kafka.apache.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-blue.svg)](https://www.postgresql.org/)
