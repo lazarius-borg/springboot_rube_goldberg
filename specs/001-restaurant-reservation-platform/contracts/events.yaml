@@ -1,0 +1,139 @@
+asyncapi: 2.6.0
+info:
+  title: Spring Boot Rube Goldberg Event Bus Contracts
+  version: 1.0.0
+  description: Asynchronous domain events transmitted over Kafka.
+
+defaultContentType: application/json
+
+channels:
+  restaurant.events:
+    description: Restaurant lifecycle and configuration changes.
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/RestaurantCreatedEvent'
+          - $ref: '#/components/messages/RestaurantUpdatedEvent'
+          - $ref: '#/components/messages/TableConfigurationChangedEvent'
+
+  reservation.events:
+    description: Reservation state changes published by the Reservation Service via Outbox.
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/ReservationCreatedEvent'
+          - $ref: '#/components/messages/ReservationCancelledEvent'
+          - $ref: '#/components/messages/ReservationStatusChangedEvent'
+
+  waiting-list.events:
+    description: Waiting list matches, offers, and expirations.
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/WaitingListEntryCreatedEvent'
+          - $ref: '#/components/messages/WaitingListOfferCreatedEvent'
+          - $ref: '#/components/messages/WaitingListOfferAcceptedEvent'
+          - $ref: '#/components/messages/WaitingListOfferExpiredEvent'
+
+  notification.events:
+    description: Direct asynchronous notification dispatch requests.
+    publish:
+      message:
+        $ref: '#/components/messages/NotificationRequestedEvent'
+
+components:
+  messages:
+    ReservationCreatedEvent:
+      name: ReservationCreated
+      payload:
+        type: object
+        required: [eventId, timestamp, reservationId, restaurantId, customerId, customerEmail, startTime, endTime, partySize, allocatedTableIds]
+        properties:
+          eventId: { type: string, format: uuid }
+          timestamp: { type: string, format: date-time }
+          eventType: { type: string, default: "ReservationCreated" }
+          reservationId: { type: string, format: uuid }
+          restaurantId: { type: string, format: uuid }
+          customerId: { type: string, format: uuid }
+          customerEmail: { type: string, format: email }
+          startTime: { type: string, format: date-time }
+          endTime: { type: string, format: date-time }
+          partySize: { type: integer }
+          allocatedTableIds:
+            type: array
+            items: { type: string, format: uuid }
+
+    ReservationCancelledEvent:
+      name: ReservationCancelled
+      payload:
+        type: object
+        required: [eventId, timestamp, reservationId, restaurantId, customerId, releasedTableIds, startTime, endTime, partySize]
+        properties:
+          eventId: { type: string, format: uuid }
+          timestamp: { type: string, format: date-time }
+          eventType: { type: string, default: "ReservationCancelled" }
+          reservationId: { type: string, format: uuid }
+          restaurantId: { type: string, format: uuid }
+          customerId: { type: string, format: uuid }
+          releasedTableIds:
+            type: array
+            items: { type: string, format: uuid }
+          startTime: { type: string, format: date-time }
+          endTime: { type: string, format: date-time }
+          partySize: { type: integer }
+          reason: { type: string }
+
+    ReservationStatusChangedEvent:
+      name: ReservationStatusChanged
+      payload:
+        type: object
+        required: [eventId, timestamp, reservationId, previousStatus, newStatus]
+        properties:
+          eventId: { type: string, format: uuid }
+          timestamp: { type: string, format: date-time }
+          reservationId: { type: string, format: uuid }
+          restaurantId: { type: string, format: uuid }
+          previousStatus: { type: string }
+          newStatus: { type: string }
+
+    WaitingListOfferCreatedEvent:
+      name: WaitingListOfferCreated
+      payload:
+        type: object
+        required: [eventId, timestamp, offerId, waitingListEntryId, customerId, customerEmail, restaurantId, offeredStartTime, expiresAt]
+        properties:
+          eventId: { type: string, format: uuid }
+          timestamp: { type: string, format: date-time }
+          offerId: { type: string, format: uuid }
+          waitingListEntryId: { type: string, format: uuid }
+          customerId: { type: string, format: uuid }
+          customerEmail: { type: string, format: email }
+          restaurantId: { type: string, format: uuid }
+          offeredStartTime: { type: string, format: date-time }
+          expiresAt: { type: string, format: date-time }
+
+    WaitingListOfferExpiredEvent:
+      name: WaitingListOfferExpired
+      payload:
+        type: object
+        required: [eventId, timestamp, offerId, waitingListEntryId, restaurantId]
+        properties:
+          eventId: { type: string, format: uuid }
+          timestamp: { type: string, format: date-time }
+          offerId: { type: string, format: uuid }
+          waitingListEntryId: { type: string, format: uuid }
+          restaurantId: { type: string, format: uuid }
+
+    NotificationRequestedEvent:
+      name: NotificationRequested
+      payload:
+        type: object
+        required: [eventId, timestamp, recipientEmail, notificationType, subject, body]
+        properties:
+          eventId: { type: string, format: uuid }
+          timestamp: { type: string, format: date-time }
+          recipientEmail: { type: string, format: email }
+          notificationType: { type: string }
+          subject: { type: string }
+          body: { type: string }
+          correlationId: { type: string }
