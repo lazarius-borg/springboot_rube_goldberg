@@ -1,0 +1,710 @@
+openapi: 3.0.3
+info:
+  title: Spring Boot Rube Goldberg Restaurant Reservation Platform API
+  description: Public and internal microservices API routed via the API Gateway.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+    description: API Gateway Entry Point
+
+paths:
+  /customers/me:
+    get:
+      summary: Get current authenticated customer profile
+      operationId: getCurrentCustomer
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      summary: Update current customer profile
+      operationId: updateCurrentCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerProfile'
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+
+  /restaurants:
+    get:
+      summary: List all active restaurants
+      operationId: listRestaurants
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated restaurants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestaurantPage'
+    post:
+      summary: Create new restaurant (Manager/Admin only)
+      operationId: createRestaurant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRestaurantRequest'
+      responses:
+        '201':
+          description: Restaurant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Restaurant'
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+
+  /restaurants/{id}:
+    get:
+      summary: Get restaurant details
+      operationId: getRestaurant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Restaurant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Restaurant'
+        '404':
+          $ref: '#/components/responses/ProblemDetails'
+
+  /restaurants/{id}/tables:
+    post:
+      summary: Add tables to restaurant
+      operationId: addTable
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTableRequest'
+      responses:
+        '201':
+          description: Table created
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+
+  /restaurants/{id}/opening-hours:
+    put:
+      summary: Configure opening hours and exceptions
+      operationId: configureOpeningHours
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningHoursConfig'
+      responses:
+        '200':
+          description: Opening hours updated
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+
+  /availability:
+    get:
+      summary: Search table availability
+      operationId: searchAvailability
+      parameters:
+        - name: restaurantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: time
+          in: query
+          required: true
+          schema:
+            type: string
+            format: time
+        - name: partySize
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Availability search response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+
+  /reservations:
+    post:
+      summary: Create guaranteed reservation
+      operationId: createReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReservationRequest'
+      responses:
+        '201':
+          description: Reservation confirmed immediately
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '409':
+          description: Conflict (no available table or double-booking race condition)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+    get:
+      summary: List reservations for customer or restaurant
+      operationId: listReservations
+      parameters:
+        - name: restaurantId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of reservations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationPage'
+
+  /reservations/{id}:
+    get:
+      summary: Get reservation details
+      operationId: getReservation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '404':
+          $ref: '#/components/responses/ProblemDetails'
+    delete:
+      summary: Cancel reservation (subject to cancellation window)
+      operationId: cancelReservation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reservation cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '409':
+          description: Cancellation deadline passed
+          $ref: '#/components/responses/ProblemDetails'
+
+  /reservations/{id}/status:
+    patch:
+      summary: Update reservation operational status (Manager only)
+      operationId: updateReservationStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+
+  /waiting-list:
+    post:
+      summary: Join waiting list for unavailable slot
+      operationId: joinWaitingList
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinWaitingListRequest'
+      responses:
+        '201':
+          description: Added to waiting list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaitingListEntry'
+        '400':
+          $ref: '#/components/responses/ProblemDetails'
+    get:
+      summary: Get active waiting list entries
+      operationId: getWaitingList
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WaitingListEntry'
+
+  /waiting-list/offers/{offerId}/accept:
+    post:
+      summary: Accept waiting list offer
+      operationId: acceptOffer
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Offer accepted and converted to confirmed reservation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '410':
+          description: Offer expired
+          $ref: '#/components/responses/ProblemDetails'
+
+  /analytics/summary:
+    get:
+      summary: Get aggregated business metrics
+      operationId: getAnalyticsSummary
+      parameters:
+        - name: restaurantId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSummary'
+
+components:
+  responses:
+    ProblemDetails:
+      description: RFC 9457 structured error response
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+  schemas:
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        traceId:
+          type: string
+
+    CustomerProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        communicationPreferences:
+          type: object
+
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        communicationPreferences:
+          type: object
+
+    Restaurant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        address:
+          type: string
+        timezone:
+          type: string
+        defaultReservationDurationMinutes:
+          type: integer
+        minBookingAdvanceMinutes:
+          type: integer
+        maxBookingHorizonDays:
+          type: integer
+        cancellationWindowHours:
+          type: integer
+
+    CreateRestaurantRequest:
+      type: object
+      required:
+        - name
+        - address
+        - timezone
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        timezone:
+          type: string
+        defaultReservationDurationMinutes:
+          type: integer
+          default: 90
+        minBookingAdvanceMinutes:
+          type: integer
+          default: 30
+        maxBookingHorizonDays:
+          type: integer
+          default: 60
+        cancellationWindowHours:
+          type: integer
+          default: 2
+
+    CreateTableRequest:
+      type: object
+      required:
+        - tableNumber
+        - capacity
+      properties:
+        tableNumber:
+          type: string
+        capacity:
+          type: integer
+          minimum: 1
+
+    OpeningHoursConfig:
+      type: object
+      properties:
+        weeklySchedules:
+          type: array
+          items:
+            type: object
+            properties:
+              dayOfWeek:
+                type: integer
+              openTime:
+                type: string
+              closeTime:
+                type: string
+        specialDates:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              isClosed:
+                type: boolean
+
+    AvailabilityResponse:
+      type: object
+      properties:
+        restaurantId:
+          type: string
+          format: uuid
+        requestedTime:
+          type: string
+          format: date-time
+        partySize:
+          type: integer
+        isAvailable:
+          type: boolean
+        availableSlots:
+          type: array
+          items:
+            type: string
+            format: date-time
+
+    CreateReservationRequest:
+      type: object
+      required:
+        - restaurantId
+        - partySize
+        - startTime
+      properties:
+        restaurantId:
+          type: string
+          format: uuid
+        partySize:
+          type: integer
+          minimum: 1
+        startTime:
+          type: string
+          format: date-time
+
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        restaurantId:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        partySize:
+          type: integer
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [CONFIRMED, ARRIVED, COMPLETED, CANCELLED, NO_SHOW]
+        allocatedTableIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UpdateStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ARRIVED, COMPLETED, CANCELLED, NO_SHOW]
+
+    JoinWaitingListRequest:
+      type: object
+      required:
+        - restaurantId
+        - targetDate
+        - earliestTime
+        - latestTime
+        - partySize
+      properties:
+        restaurantId:
+          type: string
+          format: uuid
+        targetDate:
+          type: string
+          format: date
+        earliestTime:
+          type: string
+        latestTime:
+          type: string
+        partySize:
+          type: integer
+          minimum: 1
+
+    WaitingListEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        restaurantId:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        targetDate:
+          type: string
+          format: date
+        earliestTime:
+          type: string
+        latestTime:
+          type: string
+        partySize:
+          type: integer
+        status:
+          type: string
+          enum: [WAITING, OFFERED, CONVERTED, CANCELLED, EXPIRED]
+        createdAt:
+          type: string
+          format: date-time
+
+    AnalyticsSummary:
+      type: object
+      properties:
+        totalReservations:
+          type: integer
+        completedReservations:
+          type: integer
+        cancelledReservations:
+          type: integer
+        noShows:
+          type: integer
+        averagePartySize:
+          type: number
+        waitingListEntries:
+          type: integer
+        waitingListConversions:
+          type: integer
+        waitingListConversionRate:
+          type: number
+
+    RestaurantPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Restaurant'
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+
+    ReservationPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reservation'
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
