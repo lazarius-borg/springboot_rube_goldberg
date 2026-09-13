@@ -114,7 +114,7 @@ Each microservice providing REST APIs automatically exposes a rich, interactive 
 1. Start the desired service (or the full stack with Docker Compose).
 2. Open the service's Swagger UI in your browser (e.g. `http://localhost:8083/swagger-ui.html` for Restaurant Service). The API documentation and schema models are immediately visible without authentication.
 3. **Authorize for Protected Requests**:
-   - To invoke secured business endpoints via **"Try it out"**, obtain a Keycloak JWT access token (see [Keycloak Access Token](#option-a-local-development-docker-compose-infrastructure--local-java-services)).
+   - To invoke secured business endpoints via **"Try it out"**, obtain a Keycloak JWT access token (see [Keycloak Access Token](#obtaining-a-keycloak-access-token)).
    - Click the **"Authorize"** button (lock icon) at the top right of the Swagger UI page.
    - Paste your JWT access token into the `bearerAuth` value field and click **Authorize**, then **Close**.
 4. Click on any endpoint (e.g., `POST /api/v1/restaurants`), click **"Try it out"**, fill in the example JSON payload, and click **"Execute"**.
@@ -305,6 +305,69 @@ The realm export file is pre-configured at `infrastructure/keycloak/realm-export
   - `customer1` / `password` (Role: `CUSTOMER`)
   - `manager1` / `password` (Role: `RESTAURANT_MANAGER`)
   - `admin1` / `password` (Role: `ADMIN`)
+
+### Obtaining a Keycloak Access Token
+
+To interact with secured endpoints or authenticate in Swagger UI, obtain a JWT access token from the Keycloak OpenID Connect token endpoint using Direct Access Grants (`grant_type=password`).
+
+- **Token Endpoint**: `http://localhost:8081/realms/rube-goldberg/protocol/openid-connect/token` (requires HTTP **POST**)
+- **Client ID**: `rube-goldberg-app` (public client)
+- **OIDC Discovery Endpoint** (browser GET): `http://localhost:8081/realms/rube-goldberg/.well-known/openid-configuration`
+
+> [!NOTE]
+> The token endpoint strictly accepts HTTP **POST** requests (per OAuth 2.0 / OIDC RFC 6749). Navigating to `.../protocol/openid-connect/token` in a browser or sending a `GET` request returns `405 Method Not Allowed`. Similarly, the prefix path `.../protocol/openid-connect` is not a standalone resource and returns `404 Not Found`. To inspect realm metadata in a browser, use the **OIDC Discovery Endpoint** above.
+
+#### 1. Export Token as Environment Variable (`curl` + `jq`)
+
+Use the one-liner below to request an access token for **`customer1`** and export it directly to `TOKEN`:
+
+```bash
+export TOKEN=$(curl -s -X POST "http://localhost:8081/realms/rube-goldberg/protocol/openid-connect/token" \
+  -d "client_id=rube-goldberg-app" \
+  -d "grant_type=password" \
+  -d "username=customer1" \
+  -d "password=password" | jq -r .access_token)
+```
+
+To obtain a token for other seeded roles, substitute the `username`:
+- **Restaurant Manager**:
+  ```bash
+  export TOKEN=$(curl -s -X POST "http://localhost:8081/realms/rube-goldberg/protocol/openid-connect/token" \
+    -d "client_id=rube-goldberg-app" \
+    -d "grant_type=password" \
+    -d "username=manager1" \
+    -d "password=password" | jq -r .access_token)
+  ```
+- **Administrator**:
+  ```bash
+  export TOKEN=$(curl -s -X POST "http://localhost:8081/realms/rube-goldberg/protocol/openid-connect/token" \
+    -d "client_id=rube-goldberg-app" \
+    -d "grant_type=password" \
+    -d "username=admin1" \
+    -d "password=password" | jq -r .access_token)
+  ```
+
+#### 2. Fallback (Raw `curl` without `jq`)
+
+If `jq` is not installed, inspect the raw JSON response containing `access_token`, `expires_in`, and `refresh_token`:
+
+```bash
+curl -X POST "http://localhost:8081/realms/rube-goldberg/protocol/openid-connect/token" \
+  -d "client_id=rube-goldberg-app" \
+  -d "grant_type=password" \
+  -d "username=customer1" \
+  -d "password=password"
+```
+
+#### 3. Verify Token Authenticity
+
+Verify that your token is valid by invoking a protected microservice endpoint (e.g. Customer Service):
+
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/customers/me
+```
+
+A valid token returns `HTTP/1.1 200 OK` with customer profile data. Unauthenticated requests or invalid tokens return `HTTP/1.1 401 Unauthorized`.
 
 ---
 
