@@ -74,7 +74,7 @@ springboot_rube_goldberg/
 
 ## 🔌 Microservices Matrix & Port Reference
 
-Every microservice exposes **OpenAPI / Swagger UI**, **Micrometer Metrics**, and **Spring Boot Actuator Probes**:
+Every microservice exposes **Micrometer Metrics** and **Spring Boot Actuator Probes**, and domain services with REST APIs expose interactive **OpenAPI / Swagger UI**:
 
 | Service | Port | Database | Swagger UI URL | Health Endpoint |
 | :--- | :--- | :--- | :--- | :--- |
@@ -85,7 +85,7 @@ Every microservice exposes **OpenAPI / Swagger UI**, **Micrometer Metrics**, and
 | **Reservation Service** | `8085` | `reservation_db` | [Reservation Swagger UI](http://localhost:8085/swagger-ui.html) | `http://localhost:8085/actuator/health` |
 | **Waiting List Service**| `8086` | `waiting_list_db` | [Waiting List Swagger UI](http://localhost:8086/swagger-ui.html) | `http://localhost:8086/actuator/health` |
 | **Analytics Service** | `8087` | `analytics_db` | [Analytics Swagger UI](http://localhost:8087/swagger-ui.html) | `http://localhost:8087/actuator/health` |
-| **Notification Service**| `8088` | `notification_db` | [Notification Swagger UI](http://localhost:8088/swagger-ui.html) | `http://localhost:8088/actuator/health` |
+| **Notification Service**| `8088` | `notification_db` | _N/A (Event consumer — no REST APIs)_ | `http://localhost:8088/actuator/health` |
 
 ### Supporting Infrastructure Port Reference:
 - **Keycloak OIDC**: `http://localhost:8081` (Admin: `admin` / `admin`)
@@ -98,22 +98,27 @@ Every microservice exposes **OpenAPI / Swagger UI**, **Micrometer Metrics**, and
 
 ## 📑 Interactive OpenAPI & Swagger UI Exploration
 
-Each microservice automatically exposes a rich, interactive **Swagger UI** powered by `springdoc-openapi` and Spring Boot autoconfiguration.
+Each microservice providing REST APIs automatically exposes a rich, interactive **Swagger UI** powered by `springdoc-openapi` and Spring Boot autoconfiguration.
 
 ### How OpenAPI is Generated
-1. **Dependency Integration**: Each service includes `org.springdoc:springdoc-openapi-starter-webmvc-ui` (managed in root `pom.xml`).
+1. **Dependency Integration**: Each service exposing REST endpoints includes `org.springdoc:springdoc-openapi-starter-webmvc-ui` (managed in root `pom.xml`).
 2. **Declarative Annotations**:
-   - Application classes are annotated with `@OpenAPIDefinition` to configure service metadata, titles, and descriptions.
+   - Configuration classes (`OpenApiConfig.java`) are annotated with `@OpenAPIDefinition` and `@SecurityScheme` (HTTP Bearer JWT) to configure service metadata, titles, descriptions, and the Swagger UI "Authorize" dialog.
    - Controllers are annotated with `@Tag`, `@Operation`, `@ApiResponse`, `@ApiResponses`, and `@Parameter` to document query parameters, request bodies, and response codes (`200`, `201`, `400`, `404`, `409`, `410`).
 3. **Endpoint Exposure**:
    - **Interactive UI**: `http://localhost:<PORT>/swagger-ui.html` (e.g. `http://localhost:8085/swagger-ui.html` for Reservation Service).
    - **Raw OpenAPI 3.0 JSON Specification**: `http://localhost:<PORT>/v3/api-docs`
+   - **Public Access**: Swagger UI and OpenAPI documentation endpoints are publicly accessible without authentication. Domain business endpoints and Actuator management paths remain protected by OAuth2 Resource Server JWT validation.
 
 ### How to Use Swagger UI for Manual Inspection:
 1. Start the desired service (or the full stack with Docker Compose).
-2. Open the service's Swagger UI in your browser (e.g. `http://localhost:8083/swagger-ui.html` for Restaurant Service).
-3. Click on any endpoint (e.g., `POST /api/v1/restaurants`), click **"Try it out"**, fill in the example JSON payload, and click **"Execute"**.
-4. You will receive live HTTP response status codes, response headers, and response bodies formatted as JSON or RFC 9457 Problem Details.
+2. Open the service's Swagger UI in your browser (e.g. `http://localhost:8083/swagger-ui.html` for Restaurant Service). The API documentation and schema models are immediately visible without authentication.
+3. **Authorize for Protected Requests**:
+   - To invoke secured business endpoints via **"Try it out"**, obtain a Keycloak JWT access token (see [Keycloak Access Token](#option-a-local-development-docker-compose-infrastructure--local-java-services)).
+   - Click the **"Authorize"** button (lock icon) at the top right of the Swagger UI page.
+   - Paste your JWT access token into the `bearerAuth` value field and click **Authorize**, then **Close**.
+4. Click on any endpoint (e.g., `POST /api/v1/restaurants`), click **"Try it out"**, fill in the example JSON payload, and click **"Execute"**.
+5. You will receive live HTTP response status codes, response headers, and response bodies formatted as JSON or RFC 9457 Problem Details. Requests without authorization on secured endpoints will return `401 Unauthorized`.
 
 ## 💡 Key Design Decisions & Technology Rationale
 

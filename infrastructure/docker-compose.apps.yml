@@ -82,6 +82,7 @@ services:
       - SPRING_DATASOURCE_PASSWORD=rube_password
       - REDIS_HOST=redis
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
     depends_on:
       postgres:
         condition: service_healthy
