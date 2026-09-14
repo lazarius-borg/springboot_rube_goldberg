@@ -152,4 +152,55 @@ class WaitingListSecurityTest {
                     assertThat(context).doesNotHaveBean("multiIssuerJwtDecoder");
                 });
     }
+
+    @Test
+    void shouldEnforceCustomerRoleOnWaitingListEndpoints() {
+        contextRunner.run(context -> {
+            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
+            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
+
+            org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("customer-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("CUSTOMER")))
+                    .subject("customer1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
+
+            org.springframework.security.oauth2.jwt.Jwt managerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("manager-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("RESTAURANT_MANAGER")))
+                    .subject("manager1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
+
+            // 1. Customer can join waiting list
+            MockHttpServletRequest joinReq = new MockHttpServletRequest("POST", "/api/v1/waiting-list");
+            joinReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse joinRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(joinReq, joinRes, new MockFilterChain());
+            assertThat(joinRes.getStatus()).isNotIn(401, 403);
+
+            // 2. Manager without customer role CANNOT join waiting list -> 403
+            MockHttpServletRequest mgrJoinReq = new MockHttpServletRequest("POST", "/api/v1/waiting-list");
+            mgrJoinReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrJoinRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrJoinReq, mgrJoinRes, new MockFilterChain());
+            assertThat(mgrJoinRes.getStatus()).isEqualTo(403);
+
+            // 3. Customer can accept offer
+            MockHttpServletRequest acceptReq = new MockHttpServletRequest("POST", "/api/v1/waiting-list/offers/123/accept");
+            acceptReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse acceptRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(acceptReq, acceptRes, new MockFilterChain());
+            assertThat(acceptRes.getStatus()).isNotIn(401, 403);
+
+            // 4. Manager without customer role CANNOT accept offer -> 403
+            MockHttpServletRequest mgrAcceptReq = new MockHttpServletRequest("POST", "/api/v1/waiting-list/offers/123/accept");
+            mgrAcceptReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrAcceptRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrAcceptReq, mgrAcceptRes, new MockFilterChain());
+            assertThat(mgrAcceptRes.getStatus()).isEqualTo(403);
+        });
+    }
 }

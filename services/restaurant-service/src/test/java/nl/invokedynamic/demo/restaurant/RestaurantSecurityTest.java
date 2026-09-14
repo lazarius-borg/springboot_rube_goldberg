@@ -152,4 +152,76 @@ class RestaurantSecurityTest {
                     assertThat(context).doesNotHaveBean("multiIssuerJwtDecoder");
                 });
     }
+
+    @Test
+    void shouldRejectCustomerFromRestaurantManagementOperations() {
+        contextRunner.run(context -> {
+            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
+            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
+
+            org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("customer-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("CUSTOMER")))
+                    .subject("customer1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
+
+            // POST /api/v1/restaurants -> 403
+            MockHttpServletRequest postReq = new MockHttpServletRequest("POST", "/api/v1/restaurants");
+            postReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse postRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(postReq, postRes, new MockFilterChain());
+            assertThat(postRes.getStatus()).isEqualTo(403);
+
+            // PUT /api/v1/restaurants/123/opening-hours -> 403
+            MockHttpServletRequest putReq = new MockHttpServletRequest("PUT", "/api/v1/restaurants/123/opening-hours");
+            putReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse putRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(putReq, putRes, new MockFilterChain());
+            assertThat(putRes.getStatus()).isEqualTo(403);
+
+            // GET /api/v1/restaurants -> allowed (200 / not 401/403)
+            MockHttpServletRequest getReq = new MockHttpServletRequest("GET", "/api/v1/restaurants");
+            getReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse getRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(getReq, getRes, new MockFilterChain());
+            assertThat(getRes.getStatus()).isNotIn(401, 403);
+        });
+    }
+
+    @Test
+    void shouldAllowRestaurantManagerAndAdminForManagementOperations() {
+        contextRunner.run(context -> {
+            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
+            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
+
+            org.springframework.security.oauth2.jwt.Jwt managerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("manager-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("RESTAURANT_MANAGER")))
+                    .subject("manager1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
+
+            MockHttpServletRequest mgrReq = new MockHttpServletRequest("POST", "/api/v1/restaurants");
+            mgrReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrReq, mgrRes, new MockFilterChain());
+            assertThat(mgrRes.getStatus()).isNotIn(401, 403);
+
+            org.springframework.security.oauth2.jwt.Jwt adminJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("admin-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("ADMIN")))
+                    .subject("admin1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("admin-token")).thenReturn(adminJwt);
+
+            MockHttpServletRequest adminReq = new MockHttpServletRequest("POST", "/api/v1/restaurants");
+            adminReq.addHeader("Authorization", "Bearer admin-token");
+            MockHttpServletResponse adminRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(adminReq, adminRes, new MockFilterChain());
+            assertThat(adminRes.getStatus()).isNotIn(401, 403);
+        });
+    }
 }

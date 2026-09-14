@@ -152,4 +152,95 @@ class ReservationSecurityTest {
                     assertThat(context).doesNotHaveBean("multiIssuerJwtDecoder");
                 });
     }
+
+    @Test
+    void shouldEnforceRbacOnReservationEndpoints() {
+        contextRunner.run(context -> {
+            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
+            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
+
+            org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("customer-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("CUSTOMER")))
+                    .subject("customer1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
+
+            org.springframework.security.oauth2.jwt.Jwt managerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("manager-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("RESTAURANT_MANAGER")))
+                    .subject("manager1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
+
+            // 1. Customer can book reservation (POST /api/v1/reservations)
+            MockHttpServletRequest bookReq = new MockHttpServletRequest("POST", "/api/v1/reservations");
+            bookReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse bookRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(bookReq, bookRes, new MockFilterChain());
+            assertThat(bookRes.getStatus()).isNotIn(401, 403);
+
+            // 2. Manager without customer role CANNOT book reservation (POST /api/v1/reservations) -> 403
+            MockHttpServletRequest mgrBookReq = new MockHttpServletRequest("POST", "/api/v1/reservations");
+            mgrBookReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrBookRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrBookReq, mgrBookRes, new MockFilterChain());
+            assertThat(mgrBookRes.getStatus()).isEqualTo(403);
+
+            // 3. Customer CANNOT query restaurant-wide reservations (GET /api/v1/reservations) -> 403
+            MockHttpServletRequest listReq = new MockHttpServletRequest("GET", "/api/v1/reservations");
+            listReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse listRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(listReq, listRes, new MockFilterChain());
+            assertThat(listRes.getStatus()).isEqualTo(403);
+
+            // 4. Manager CAN query restaurant-wide reservations (GET /api/v1/reservations)
+            MockHttpServletRequest mgrListReq = new MockHttpServletRequest("GET", "/api/v1/reservations");
+            mgrListReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrListRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrListReq, mgrListRes, new MockFilterChain());
+            assertThat(mgrListRes.getStatus()).isNotIn(401, 403);
+
+            // 5. Customer CANNOT update reservation status (PATCH /api/v1/reservations/123/status) -> 403
+            MockHttpServletRequest statusReq = new MockHttpServletRequest("PATCH", "/api/v1/reservations/123/status");
+            statusReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse statusRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(statusReq, statusRes, new MockFilterChain());
+            assertThat(statusRes.getStatus()).isEqualTo(403);
+
+            // 6. Manager CAN update reservation status (PATCH /api/v1/reservations/123/status)
+            MockHttpServletRequest mgrStatusReq = new MockHttpServletRequest("PATCH", "/api/v1/reservations/123/status");
+            mgrStatusReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrStatusRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrStatusReq, mgrStatusRes, new MockFilterChain());
+            assertThat(mgrStatusRes.getStatus()).isNotIn(401, 403);
+
+            // 7. Both Customer and Manager CAN inspect individual reservation (GET /api/v1/reservations/123)
+            MockHttpServletRequest getCustReq = new MockHttpServletRequest("GET", "/api/v1/reservations/123");
+            getCustReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse getCustRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(getCustReq, getCustRes, new MockFilterChain());
+            assertThat(getCustRes.getStatus()).isNotIn(401, 403);
+
+            MockHttpServletRequest getMgrReq = new MockHttpServletRequest("GET", "/api/v1/reservations/123");
+            getMgrReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse getMgrRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(getMgrReq, getMgrRes, new MockFilterChain());
+            assertThat(getMgrRes.getStatus()).isNotIn(401, 403);
+
+            // 8. Both Customer and Manager CAN cancel individual reservation (DELETE /api/v1/reservations/123)
+            MockHttpServletRequest delCustReq = new MockHttpServletRequest("DELETE", "/api/v1/reservations/123");
+            delCustReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse delCustRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(delCustReq, delCustRes, new MockFilterChain());
+            assertThat(delCustRes.getStatus()).isNotIn(401, 403);
+
+            MockHttpServletRequest delMgrReq = new MockHttpServletRequest("DELETE", "/api/v1/reservations/123");
+            delMgrReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse delMgrRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(delMgrReq, delMgrRes, new MockFilterChain());
+            assertThat(delMgrRes.getStatus()).isNotIn(401, 403);
+        });
+    }
 }

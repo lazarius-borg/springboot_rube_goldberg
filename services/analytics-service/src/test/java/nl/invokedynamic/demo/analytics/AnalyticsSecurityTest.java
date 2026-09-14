@@ -1,14 +1,11 @@
-package nl.invokedynamic.demo.availability;
+package nl.invokedynamic.demo.analytics;
 
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
-import nl.invokedynamic.demo.availability.config.OpenApiConfig;
-import nl.invokedynamic.demo.availability.config.SecurityConfig;
+import nl.invokedynamic.demo.analytics.config.OpenApiConfig;
+import nl.invokedynamic.demo.analytics.config.SecurityConfig;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
-import org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -20,24 +17,11 @@ import org.springframework.security.web.SecurityFilterChain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
-class AvailabilitySecurityTest {
+class AnalyticsSecurityTest {
 
     private final WebApplicationContextRunner contextRunner = new WebApplicationContextRunner()
             .withUserConfiguration(SecurityConfig.class)
             .withBean(JwtDecoder.class, () -> mock(JwtDecoder.class));
-
-    @Test
-    void shouldAutoConfigureJwtDecoderWhenJwkSetUriConfigured() {
-        new WebApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(SecurityAutoConfiguration.class, OAuth2ResourceServerAutoConfiguration.class))
-                .withUserConfiguration(SecurityConfig.class)
-                .withPropertyValues("spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://example.com/jwks")
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context).hasSingleBean(JwtDecoder.class);
-                    assertThat(context).hasSingleBean(SecurityFilterChain.class);
-                });
-    }
 
     @Test
     void shouldConfigureOpenApiWithBearerAuth() {
@@ -82,41 +66,91 @@ class AvailabilitySecurityTest {
     }
 
     @Test
-    void shouldRejectBusinessAndActuatorEndpointsWithoutAuthentication() {
+    void shouldRejectAnalyticsEndpointsWithoutAuthentication() {
         contextRunner.run(context -> {
             SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
             FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
 
-            // Business endpoint without token
-            MockHttpServletRequest apiReq = new MockHttpServletRequest("GET", "/api/v1/availability");
+            MockHttpServletRequest apiReq = new MockHttpServletRequest("GET", "/api/v1/analytics/summary");
             MockHttpServletResponse apiRes = new MockHttpServletResponse();
             filterChainProxy.doFilter(apiReq, apiRes, new MockFilterChain());
             assertThat(apiRes.getStatus()).isEqualTo(401);
+        });
+    }
 
-            // Actuator endpoint without token
-            MockHttpServletRequest actuatorReq = new MockHttpServletRequest("GET", "/actuator/health");
-            MockHttpServletResponse actuatorRes = new MockHttpServletResponse();
-            filterChainProxy.doFilter(actuatorReq, actuatorRes, new MockFilterChain());
-            assertThat(actuatorRes.getStatus()).isEqualTo(401);
+    @Test
+    void shouldRejectCustomerFromAnalyticsEndpoints() {
+        contextRunner.run(context -> {
+            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
+            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
+
+            org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("customer-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("CUSTOMER")))
+                    .subject("customer1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
+
+            MockHttpServletRequest apiReq = new MockHttpServletRequest("GET", "/api/v1/analytics/summary");
+            apiReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse apiRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(apiReq, apiRes, new MockFilterChain());
+            assertThat(apiRes.getStatus()).isEqualTo(403);
+        });
+    }
+
+    @Test
+    void shouldAllowRestaurantManagerAndAdminForAnalyticsEndpoints() {
+        contextRunner.run(context -> {
+            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
+            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
+
+            org.springframework.security.oauth2.jwt.Jwt managerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("manager-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("RESTAURANT_MANAGER")))
+                    .subject("manager1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
+
+            MockHttpServletRequest mgrReq = new MockHttpServletRequest("GET", "/api/v1/analytics/summary");
+            mgrReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrReq, mgrRes, new MockFilterChain());
+            assertThat(mgrRes.getStatus()).isNotIn(401, 403);
+
+            org.springframework.security.oauth2.jwt.Jwt adminJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("admin-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("ADMIN")))
+                    .subject("admin1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("admin-token")).thenReturn(adminJwt);
+
+            MockHttpServletRequest adminReq = new MockHttpServletRequest("GET", "/api/v1/analytics/summary");
+            adminReq.addHeader("Authorization", "Bearer admin-token");
+            MockHttpServletResponse adminRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(adminReq, adminRes, new MockFilterChain());
+            assertThat(adminRes.getStatus()).isNotIn(401, 403);
         });
     }
 
     @Test
     void shouldAcceptExternalAndInternalIssuersInMultiIssuerValidator() {
-        var validator = new nl.invokedynamic.demo.availability.config.JwtMultiIssuerValidator(
+        var validator = new nl.invokedynamic.demo.analytics.config.JwtMultiIssuerValidator(
                 java.util.List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
         );
 
         org.springframework.security.oauth2.jwt.Jwt externalJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-1")
                 .header("alg", "none")
                 .issuer("http://localhost:8081/realms/rube-goldberg")
-                .subject("test-user")
+                .subject("manager1")
                 .build();
 
         org.springframework.security.oauth2.jwt.Jwt internalJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-2")
                 .header("alg", "none")
                 .issuer("http://keycloak:8080/realms/rube-goldberg")
-                .subject("test-user")
+                .subject("manager1")
                 .build();
 
         assertThat(validator.validate(externalJwt).hasErrors()).isFalse();
@@ -125,14 +159,14 @@ class AvailabilitySecurityTest {
 
     @Test
     void shouldRejectUntrustedIssuerInMultiIssuerValidator() {
-        var validator = new nl.invokedynamic.demo.availability.config.JwtMultiIssuerValidator(
+        var validator = new nl.invokedynamic.demo.analytics.config.JwtMultiIssuerValidator(
                 java.util.List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
         );
 
         org.springframework.security.oauth2.jwt.Jwt untrustedJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-3")
                 .header("alg", "none")
                 .issuer("http://untrusted-auth.org/realms/rube-goldberg")
-                .subject("test-user")
+                .subject("manager1")
                 .build();
 
         var result = validator.validate(untrustedJwt);
@@ -167,56 +201,5 @@ class AvailabilitySecurityTest {
                     assertThat(context).hasBean("singleIssuerJwtDecoder");
                     assertThat(context).doesNotHaveBean("multiIssuerJwtDecoder");
                 });
-    }
-
-    @Test
-    void shouldAllowAllPlatformRolesForAvailabilityEndpoint() {
-        contextRunner.run(context -> {
-            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
-            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
-            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
-
-            // Customer
-            org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("customer-token")
-                    .header("alg", "none")
-                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("CUSTOMER")))
-                    .subject("customer1")
-                    .build();
-            org.mockito.Mockito.when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
-
-            MockHttpServletRequest custReq = new MockHttpServletRequest("GET", "/api/v1/availability");
-            custReq.addHeader("Authorization", "Bearer customer-token");
-            MockHttpServletResponse custRes = new MockHttpServletResponse();
-            filterChainProxy.doFilter(custReq, custRes, new MockFilterChain());
-            assertThat(custRes.getStatus()).isNotIn(401, 403);
-
-            // Manager
-            org.springframework.security.oauth2.jwt.Jwt managerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("manager-token")
-                    .header("alg", "none")
-                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("RESTAURANT_MANAGER")))
-                    .subject("manager1")
-                    .build();
-            org.mockito.Mockito.when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
-
-            MockHttpServletRequest mgrReq = new MockHttpServletRequest("GET", "/api/v1/availability");
-            mgrReq.addHeader("Authorization", "Bearer manager-token");
-            MockHttpServletResponse mgrRes = new MockHttpServletResponse();
-            filterChainProxy.doFilter(mgrReq, mgrRes, new MockFilterChain());
-            assertThat(mgrRes.getStatus()).isNotIn(401, 403);
-
-            // Admin
-            org.springframework.security.oauth2.jwt.Jwt adminJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("admin-token")
-                    .header("alg", "none")
-                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("ADMIN")))
-                    .subject("admin1")
-                    .build();
-            org.mockito.Mockito.when(jwtDecoder.decode("admin-token")).thenReturn(adminJwt);
-
-            MockHttpServletRequest adminReq = new MockHttpServletRequest("GET", "/api/v1/availability");
-            adminReq.addHeader("Authorization", "Bearer admin-token");
-            MockHttpServletResponse adminRes = new MockHttpServletResponse();
-            filterChainProxy.doFilter(adminReq, adminRes, new MockFilterChain());
-            assertThat(adminRes.getStatus()).isNotIn(401, 403);
-        });
     }
 }

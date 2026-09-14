@@ -156,4 +156,41 @@ class CustomerSecurityTest {
                     assertThat(context).doesNotHaveBean("multiIssuerJwtDecoder");
                 });
     }
+
+    @Test
+    void shouldEnforceCustomerRoleOnCustomerEndpoints() {
+        contextRunner.run(context -> {
+            JwtDecoder jwtDecoder = context.getBean(JwtDecoder.class);
+            SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+            FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
+
+            org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("customer-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("CUSTOMER")))
+                    .subject("customer1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
+
+            org.springframework.security.oauth2.jwt.Jwt managerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("manager-token")
+                    .header("alg", "none")
+                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("RESTAURANT_MANAGER")))
+                    .subject("manager1")
+                    .build();
+            org.mockito.Mockito.when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
+
+            // 1. Customer can access /api/v1/customers/me
+            MockHttpServletRequest custReq = new MockHttpServletRequest("GET", "/api/v1/customers/me");
+            custReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse custRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(custReq, custRes, new MockFilterChain());
+            assertThat(custRes.getStatus()).isNotIn(401, 403);
+
+            // 2. Manager without customer role CANNOT access /api/v1/customers/me -> 403
+            MockHttpServletRequest mgrReq = new MockHttpServletRequest("GET", "/api/v1/customers/me");
+            mgrReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrReq, mgrRes, new MockFilterChain());
+            assertThat(mgrRes.getStatus()).isEqualTo(403);
+        });
+    }
 }

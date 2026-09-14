@@ -204,12 +204,34 @@ The repository includes standard Kubernetes manifests with ConfigMaps, Secrets, 
 
 ## 🧪 Interactive End-to-End Walkthrough
 
-Follow these steps via `curl` to experience the full **Rube Goldberg Event Chain Reaction**:
+Follow these steps via `curl` to experience the full **Rube Goldberg Event Chain Reaction** directly against the assigned microservice ports using Role-Based Access Control (RBAC):
 
-### Step 1: Register a Restaurant & Tables
+### Step 0: Acquire Role Tokens (Keycloak Direct Grants)
+
+Secure endpoints require Bearer authentication. Acquire tokens for **Restaurant Manager** (`manager1`) and **Customer** (`customer1`):
+
+```bash
+# 1. Restaurant Manager Token (manager1 - RESTAURANT_MANAGER)
+MANAGER_TOKEN=$(curl -s -X POST "http://localhost:8081/realms/rube-goldberg/protocol/openid-connect/token" \
+  -d "client_id=rube-goldberg-app" \
+  -d "grant_type=password" \
+  -d "username=manager1" \
+  -d "password=password" | jq -r .access_token)
+
+# 2. Customer Token (customer1 - CUSTOMER)
+CUSTOMER_TOKEN=$(curl -s -X POST "http://localhost:8081/realms/rube-goldberg/protocol/openid-connect/token" \
+  -d "client_id=rube-goldberg-app" \
+  -d "grant_type=password" \
+  -d "username=customer1" \
+  -d "password=password" | jq -r .access_token)
+```
+
+### Step 1: Register a Restaurant & Tables (`restaurant-service: 8083`)
+*Requires `RESTAURANT_MANAGER` or `ADMIN` role.*
 ```bash
 # 1. Create Restaurant
-REST_ID=$(curl -s -X POST http://localhost:8080/api/v1/restaurants \
+REST_ID=$(curl -s -X POST http://localhost:8083/api/v1/restaurants \
+  -H "Authorization: Bearer $MANAGER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "The Gourmet Goldberg",
@@ -221,20 +243,25 @@ REST_ID=$(curl -s -X POST http://localhost:8080/api/v1/restaurants \
 echo "Created Restaurant ID: $REST_ID"
 
 # 2. Add Table 1 (Capacity: 4)
-curl -s -X POST http://localhost:8080/api/v1/restaurants/$REST_ID/tables \
+curl -s -X POST http://localhost:8083/api/v1/restaurants/$REST_ID/tables \
+  -H "Authorization: Bearer $MANAGER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"tableNumber": "T1", "capacity": 4}' | jq .
 ```
 
-### Step 2: Query Real-Time Availability (Redis Caching)
+### Step 2: Query Real-Time Availability (`availability-service: 8084`)
+*Accessible to all authenticated platform roles (`CUSTOMER`, `RESTAURANT_MANAGER`, `ADMIN`).*
 ```bash
-curl -s "http://localhost:8080/api/v1/availability?restaurantId=$REST_ID&date=2026-09-01&time=19:00:00&partySize=4" | jq .
+curl -s -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  "http://localhost:8084/api/v1/availability?restaurantId=$REST_ID&date=2026-09-01&time=19:00:00&partySize=4" | jq .
 ```
 *Expected: `isAvailable: true`*
 
-### Step 3: Book the Table (Guaranteed Reservation)
+### Step 3: Book the Table (Guaranteed Reservation) (`reservation-service: 8085`)
+*Requires `CUSTOMER` role (managers/admins without the customer role receive 403 Forbidden).*
 ```bash
-RES_ID=$(curl -s -X POST http://localhost:8080/api/v1/reservations \
+RES_ID=$(curl -s -X POST http://localhost:8085/api/v1/reservations \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
     \"restaurantId\": \"$REST_ID\",
@@ -248,15 +275,18 @@ echo "Confirmed Reservation: $RES_ID"
 ```
 *Observe: Outbox publishes `ReservationCreatedEvent` → Notification service renders email → Check Mailpit at `http://localhost:8025`!*
 
-### Step 4: Check Availability Again (Cache Invalidation)
+### Step 4: Check Availability Again (Cache Invalidation) (`availability-service: 8084`)
 ```bash
-curl -s "http://localhost:8080/api/v1/availability?restaurantId=$REST_ID&date=2026-09-01&time=19:00:00&partySize=4" | jq .
+curl -s -H "Authorization: Bearer $CUSTOMER_TOKEN" \
+  "http://localhost:8084/api/v1/availability?restaurantId=$REST_ID&date=2026-09-01&time=19:00:00&partySize=4" | jq .
 ```
 *Expected: `isAvailable: false` (the only 4-top table is booked).*
 
-### Step 5: Join the Fair FIFO Waiting List
+### Step 5: Join the Fair FIFO Waiting List (`waiting-list-service: 8086`)
+*Requires `CUSTOMER` role.*
 ```bash
-WAIT_ID=$(curl -s -X POST http://localhost:8080/api/v1/waiting-list \
+WAIT_ID=$(curl -s -X POST http://localhost:8086/api/v1/waiting-list \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
     \"restaurantId\": \"$REST_ID\",
@@ -270,9 +300,11 @@ WAIT_ID=$(curl -s -X POST http://localhost:8080/api/v1/waiting-list \
 echo "Joined Waiting List: $WAIT_ID"
 ```
 
-### Step 6: Trigger the Cancellation Chain Reaction
+### Step 6: Trigger the Cancellation Chain Reaction (`reservation-service: 8085`)
+*Accessible to `CUSTOMER`, `RESTAURANT_MANAGER`, or `ADMIN`.*
 ```bash
-curl -s -X DELETE "http://localhost:8080/api/v1/reservations/$RES_ID?cancellationWindowHours=2&reason=Change%20of%20plans" | jq .
+curl -s -X DELETE "http://localhost:8085/api/v1/reservations/$RES_ID?cancellationWindowHours=2&reason=Change%20of%20plans" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq .
 ```
 *The Goldberg Cascade in Motion:*
 1. `reservation-service` marks reservation `CANCELLED`, releases Table T1, and emits `ReservationCancelledEvent`.
@@ -281,9 +313,11 @@ curl -s -X DELETE "http://localhost:8080/api/v1/reservations/$RES_ID?cancellatio
 4. `availability-service` updates projections.
 5. `analytics-service` records cancellation KPI.
 
-### Step 7: Inspect Real-Time Business Analytics
+### Step 7: Inspect Real-Time Business Analytics (`analytics-service: 8087`)
+*Requires `RESTAURANT_MANAGER` or `ADMIN` role.*
 ```bash
-curl -s "http://localhost:8080/api/v1/analytics/summary?restaurantId=$REST_ID" | jq .
+curl -s -H "Authorization: Bearer $MANAGER_TOKEN" \
+  "http://localhost:8087/api/v1/analytics/summary?restaurantId=$REST_ID" | jq .
 ```
 
 ---
@@ -305,6 +339,40 @@ The realm export file is pre-configured at `infrastructure/keycloak/realm-export
   - `customer1` / `password` (Role: `CUSTOMER`)
   - `manager1` / `password` (Role: `RESTAURANT_MANAGER`)
   - `admin1` / `password` (Role: `ADMIN`)
+
+### 🛡️ Role-Based Access Control (RBAC) & Responsibilities
+
+The platform enforces strict Role-Based Access Control on all microservice endpoints using realm roles encoded in Keycloak JWT tokens under `realm_access.roles`. Each role defines specific boundaries and responsibilities:
+
+#### Role Responsibilities
+
+1. **`CUSTOMER` (Dining Customer)**:
+   - **Allowed**: Browse restaurant catalog listings and schedules, query real-time table availability, book guaranteed table reservations (`POST /api/v1/reservations`), join fair FIFO waiting lists (`POST /api/v1/waiting-list`), accept waiting list cancellation offers, inspect and cancel personal reservations (`GET`/`DELETE /api/v1/reservations/{id}`), and manage personal customer profiles (`/api/v1/customers/me`).
+   - **Forbidden**: Registering restaurants, configuring tables or combinations, updating opening hour schedules, querying restaurant-wide reservation lists, updating reservation lifecycle statuses, or viewing platform business analytics.
+2. **`RESTAURANT_MANAGER` (Restaurant Operator)**:
+   - **Allowed**: Register restaurant establishments (`POST /api/v1/restaurants`), manage dining tables and combinable tables, configure operating hours schedules, query restaurant-wide reservation lists (`GET /api/v1/reservations?restaurantId=...`), update reservation lifecycle statuses (`PATCH /api/v1/reservations/{id}/status`), view individual reservations, cancel reservations, and access operational business analytics (`GET /api/v1/analytics/**`).
+   - **Forbidden**: Booking dining reservations or joining waiting lists unless explicitly granted the `CUSTOMER` role.
+3. **`ADMIN` (Platform Administrator)**:
+   - **Allowed**: Full platform management capabilities across all establishments, table inventories, schedules, reservation statuses, and operational analytics. Like managers, administrators cannot create dining reservations or join waiting lists unless also granted the `CUSTOMER` role.
+
+#### Endpoint Permission Matrix
+
+| Microservice | Direct Port | Endpoint Path | Method | Minimum Required Role(s) | Unauthenticated | Unauthorized Role |
+|---|---|---|---|---|---|---|
+| **restaurant-service** | `8083` | `/api/v1/restaurants` | `POST` | `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| | | `/api/v1/restaurants/*/tables` | `POST` | `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| | | `/api/v1/restaurants/*/table-combinations` | `POST` | `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| | | `/api/v1/restaurants/*/opening-hours` | `PUT` | `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| | | `/api/v1/restaurants/**` | `GET` | `CUSTOMER`, `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| **availability-service** | `8084` | `/api/v1/availability/**` | `GET` | `CUSTOMER`, `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| **reservation-service** | `8085` | `/api/v1/reservations` | `POST` | `CUSTOMER` | 401 Unauthorized | 403 Forbidden |
+| | | `/api/v1/reservations/*` | `GET`, `DELETE` | `CUSTOMER`, `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| | | `/api/v1/reservations` | `GET` | `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| | | `/api/v1/reservations/*/status` | `PATCH` | `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| **waiting-list-service** | `8086` | `/api/v1/waiting-list/**` | `POST` | `CUSTOMER` | 401 Unauthorized | 403 Forbidden |
+| **customer-service** | `8082` | `/api/v1/customers/**` | `GET`, `PUT` | `CUSTOMER` | 401 Unauthorized | 403 Forbidden |
+| **analytics-service** | `8087` | `/api/v1/analytics/**` | `GET` | `RESTAURANT_MANAGER`, `ADMIN` | 401 Unauthorized | 403 Forbidden |
+| **All Services** | Any | `/swagger-ui/**`, `/v3/api-docs/**` | `GET` | None (`permitAll`) | 200 OK | N/A |
 
 ### Obtaining a Keycloak Access Token
 
@@ -375,7 +443,7 @@ The platform supports profile-based token validation across different network to
 - **External Host Issuer**: `http://localhost:8081/realms/rube-goldberg` (tokens minted from host browser, Swagger UI, or host CLI)
 - **Internal Docker Issuer**: `http://keycloak:8080/realms/rube-goldberg` (tokens minted inside the Docker network or between microservices)
 
-All secured domain microservices (`customer-service`, `restaurant-service`, `availability-service`, `reservation-service`, `waiting-list-service`) dynamically configure their `JwtDecoder` based on the active Spring profile:
+All secured domain microservices (`customer-service`, `restaurant-service`, `availability-service`, `reservation-service`, `waiting-list-service`, `analytics-service`) dynamically configure their `JwtDecoder` based on the active Spring profile:
 - In **Docker Compose** (`docker` profile via `SPRING_PROFILES_ACTIVE=docker`): The `@Profile("docker")` bean `multiIssuerJwtDecoder` is activated. It uses `JwtMultiIssuerValidator` with `security.jwt.accepted-issuers` to accept tokens minted against both the internal Keycloak network (`http://keycloak:8080/...`) and external host requests via Swagger UI (`http://localhost:8081/...`).
 - In **Local Development** (when the `docker` profile is not active): The `@Profile("!docker")` bean `singleIssuerJwtDecoder` is active as a fallback. It uses standard Spring Security single-issuer validation strictly against `spring.security.oauth2.resourceserver.jwt.issuer-uri` (`http://localhost:8081/...`).
 
