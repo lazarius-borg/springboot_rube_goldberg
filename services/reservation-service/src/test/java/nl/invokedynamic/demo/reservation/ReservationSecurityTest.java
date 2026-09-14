@@ -3,6 +3,7 @@ package nl.invokedynamic.demo.reservation;
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
+import nl.invokedynamic.demo.reservation.config.JwtMultiIssuerValidator;
 import nl.invokedynamic.demo.reservation.config.OpenApiConfig;
 import nl.invokedynamic.demo.reservation.config.SecurityConfig;
 import org.junit.jupiter.api.Test;
@@ -10,12 +11,17 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 
+import java.util.List;
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ReservationSecurityTest {
 
@@ -87,17 +93,17 @@ class ReservationSecurityTest {
 
     @Test
     void shouldAcceptExternalAndInternalIssuersInMultiIssuerValidator() {
-        var validator = new nl.invokedynamic.demo.reservation.config.JwtMultiIssuerValidator(
-                java.util.List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
+        var validator = new JwtMultiIssuerValidator(
+                List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
         );
 
-        org.springframework.security.oauth2.jwt.Jwt externalJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-1")
+        Jwt externalJwt = Jwt.withTokenValue("token-1")
                 .header("alg", "none")
                 .issuer("http://localhost:8081/realms/rube-goldberg")
                 .subject("test-user")
                 .build();
 
-        org.springframework.security.oauth2.jwt.Jwt internalJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-2")
+        Jwt internalJwt = Jwt.withTokenValue("token-2")
                 .header("alg", "none")
                 .issuer("http://keycloak:8080/realms/rube-goldberg")
                 .subject("test-user")
@@ -109,11 +115,11 @@ class ReservationSecurityTest {
 
     @Test
     void shouldRejectUntrustedIssuerInMultiIssuerValidator() {
-        var validator = new nl.invokedynamic.demo.reservation.config.JwtMultiIssuerValidator(
-                java.util.List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
+        var validator = new JwtMultiIssuerValidator(
+                List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
         );
 
-        org.springframework.security.oauth2.jwt.Jwt untrustedJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-3")
+        Jwt untrustedJwt = Jwt.withTokenValue("token-3")
                 .header("alg", "none")
                 .issuer("http://untrusted-auth.org/realms/rube-goldberg")
                 .subject("test-user")
@@ -160,19 +166,19 @@ class ReservationSecurityTest {
             SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
             FilterChainProxy filterChainProxy = new FilterChainProxy(filterChain);
 
-            org.springframework.security.oauth2.jwt.Jwt customerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("customer-token")
+            Jwt customerJwt = Jwt.withTokenValue("customer-token")
                     .header("alg", "none")
-                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("CUSTOMER")))
+                    .claim("realm_access", Map.of("roles", List.of("CUSTOMER")))
                     .subject("customer1")
                     .build();
-            org.mockito.Mockito.when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
+            when(jwtDecoder.decode("customer-token")).thenReturn(customerJwt);
 
-            org.springframework.security.oauth2.jwt.Jwt managerJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("manager-token")
+            Jwt managerJwt = Jwt.withTokenValue("manager-token")
                     .header("alg", "none")
-                    .claim("realm_access", java.util.Map.of("roles", java.util.List.of("RESTAURANT_MANAGER")))
+                    .claim("realm_access", Map.of("roles", List.of("RESTAURANT_MANAGER")))
                     .subject("manager1")
                     .build();
-            org.mockito.Mockito.when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
+            when(jwtDecoder.decode("manager-token")).thenReturn(managerJwt);
 
             // 1. Customer can book reservation (POST /api/v1/reservations)
             MockHttpServletRequest bookReq = new MockHttpServletRequest("POST", "/api/v1/reservations");

@@ -70,11 +70,11 @@ public class ReservationService {
         );
         reservationRepository.save(reservation);
 
-        for (UUID tableId : allocatedTables.get()) {
-            allocationRepository.save(new ReservationTableAllocationEntity(
-                    UUID.randomUUID(), reservationId, tableId, restaurantId, startTime, endTime
-            ));
-        }
+        allocationRepository.saveAll(allocatedTables.get().stream()
+                .map(tableId -> new ReservationTableAllocationEntity(
+                        UUID.randomUUID(), reservationId, tableId, restaurantId, startTime, endTime
+                ))
+                .toList());
 
         try {
             ReservationCreatedEvent event = new ReservationCreatedEvent(

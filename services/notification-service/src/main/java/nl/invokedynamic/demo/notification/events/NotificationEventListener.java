@@ -1,5 +1,6 @@
 package nl.invokedynamic.demo.notification.events;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.events.ReservationCancelledEvent;
 import nl.invokedynamic.demo.events.ReservationCreatedEvent;
@@ -46,7 +47,7 @@ public class NotificationEventListener {
             if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
                 message = objectMapper.readValue(message, String.class);
             }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            JsonNode node = objectMapper.readTree(message);
             if (node.has("allocatedTableIds") || message.contains("ReservationCreated")) {
                 ReservationCreatedEvent event = objectMapper.treeToValue(node, ReservationCreatedEvent.class);
                 if (isAlreadyProcessed(event.eventId(), "ReservationCreated")) return;
@@ -82,7 +83,7 @@ public class NotificationEventListener {
             if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
                 message = objectMapper.readValue(message, String.class);
             }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            JsonNode node = objectMapper.readTree(message);
             if (node.has("expiresAt") || node.has("offeredTableIds") || message.contains("WaitingListOfferCreated")) {
                 WaitingListOfferCreatedEvent event = objectMapper.treeToValue(node, WaitingListOfferCreatedEvent.class);
                 if (isAlreadyProcessed(event.eventId(), "WaitingListOfferCreated")) return;

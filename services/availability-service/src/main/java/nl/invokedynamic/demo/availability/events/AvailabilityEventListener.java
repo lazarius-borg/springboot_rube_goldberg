@@ -1,5 +1,6 @@
 package nl.invokedynamic.demo.availability.events;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.availability.domain.*;
 import nl.invokedynamic.demo.availability.repository.*;
@@ -48,7 +49,7 @@ public class AvailabilityEventListener {
             if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
                 message = objectMapper.readValue(message, String.class);
             }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            JsonNode node = objectMapper.readTree(message);
             if (node.has("defaultReservationDurationMinutes") || node.has("minBookingAdvanceMinutes") || message.contains("RestaurantCreated")) {
                 RestaurantCreatedEvent event = objectMapper.treeToValue(node, RestaurantCreatedEvent.class);
                 restaurantRepository.save(new RestaurantViewEntity(
@@ -62,12 +63,14 @@ public class AvailabilityEventListener {
                 tableRepository.deleteAll(tableRepository.findByRestaurantId(event.restaurantId()));
                 combinationRepository.deleteAll(combinationRepository.findByRestaurantId(event.restaurantId()));
 
-                for (var t : event.tables()) {
-                    tableRepository.save(new TableInventoryViewEntity(t.tableId(), event.restaurantId(), t.tableNumber(), t.capacity()));
-                }
-                for (var c : event.combinations()) {
-                    combinationRepository.save(new TableCombinationViewEntity(c.combinationId(), event.restaurantId(), c.name(), c.tableIds(), c.combinedCapacity()));
-                }
+                tableRepository.saveAll(event.tables().stream()
+                        .map(t -> new TableInventoryViewEntity(t.tableId(), event.restaurantId(), t.tableNumber(), t.capacity()))
+                        .toList());
+
+                combinationRepository.saveAll(event.combinations().stream()
+                        .map(c -> new TableCombinationViewEntity(c.combinationId(), event.restaurantId(), c.name(), c.tableIds(), c.combinedCapacity()))
+                        .toList());
+
                 availabilityService.invalidateCache(event.restaurantId());
                 log.info("Handled TableConfigurationChangedEvent in availability-service for restaurantId: {}", event.restaurantId());
             }
@@ -83,14 +86,14 @@ public class AvailabilityEventListener {
             if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
                 message = objectMapper.readValue(message, String.class);
             }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            JsonNode node = objectMapper.readTree(message);
             if (node.has("allocatedTableIds") || message.contains("ReservationCreated")) {
                 ReservationCreatedEvent event = objectMapper.treeToValue(node, ReservationCreatedEvent.class);
-                for (UUID tableId : event.allocatedTableIds()) {
-                    occupancyRepository.save(new SlotOccupancyViewEntity(
-                            UUID.randomUUID(), event.reservationId(), event.restaurantId(), tableId, event.startTime(), event.endTime()
-                    ));
-                }
+                occupancyRepository.saveAll(event.allocatedTableIds().stream()
+                        .map(tableId -> new SlotOccupancyViewEntity(
+                                UUID.randomUUID(), event.reservationId(), event.restaurantId(), tableId, event.startTime(), event.endTime()
+                        ))
+                        .toList());
                 availabilityService.invalidateCache(event.restaurantId());
                 log.info("Handled ReservationCreatedEvent in availability-service for reservationId: {}", event.reservationId());
             } else if (node.has("releasedTableIds") || node.has("reason") || message.contains("ReservationCancelled")) {

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class AvailabilityService {
@@ -56,32 +57,15 @@ public class AvailabilityService {
                 restaurantId, endTime, startTime
         );
 
-        Set<UUID> occupiedTableIds = new HashSet<>();
-        for (SlotOccupancyViewEntity occ : occupancies) {
-            occupiedTableIds.add(occ.getTableId());
-        }
+        Set<UUID> occupiedTableIds = occupancies.stream()
+                .map(SlotOccupancyViewEntity::getTableId)
+                .collect(Collectors.toSet());
 
-        boolean available = false;
-        // Check single tables
-        for (TableInventoryViewEntity t : tables) {
-            if (!occupiedTableIds.contains(t.getId()) && t.getCapacity() >= partySize) {
-                available = true;
-                break;
-            }
-        }
-
-        // Check combinations if single table not found
-        if (!available) {
-            for (TableCombinationViewEntity c : combinations) {
-                if (c.getCombinedCapacity() >= partySize) {
-                    boolean combFree = c.getTableIds().stream().noneMatch(occupiedTableIds::contains);
-                    if (combFree) {
-                        available = true;
-                        break;
-                    }
-                }
-            }
-        }
+        boolean available = tables.stream()
+                .anyMatch(t -> !occupiedTableIds.contains(t.getId()) && t.getCapacity() >= partySize)
+                || combinations.stream()
+                .filter(c -> c.getCombinedCapacity() >= partySize)
+                .anyMatch(c -> c.getTableIds().stream().noneMatch(occupiedTableIds::contains));
 
         List<String> suggestedSlots = new ArrayList<>();
         if (available) {

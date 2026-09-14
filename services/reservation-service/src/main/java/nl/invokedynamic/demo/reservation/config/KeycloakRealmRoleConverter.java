@@ -27,11 +27,12 @@ public class KeycloakRealmRoleConverter implements Converter<Jwt, Collection<Gra
         if (realmAccess != null && realmAccess.containsKey("roles")) {
             Object rolesObj = realmAccess.get("roles");
             if (rolesObj instanceof List<?> roles) {
-                for (Object role : roles) {
-                    if (role instanceof String roleName && !roleName.isBlank()) {
-                        authorities.add(new SimpleGrantedAuthority("ROLE_" + roleName));
-                    }
-                }
+                roles.stream()
+                        .filter(String.class::isInstance)
+                        .map(String.class::cast)
+                        .filter(roleName -> !roleName.isBlank())
+                        .map(roleName -> new SimpleGrantedAuthority("ROLE_" + roleName))
+                        .forEach(authorities::add);
             }
         }
         return authorities;

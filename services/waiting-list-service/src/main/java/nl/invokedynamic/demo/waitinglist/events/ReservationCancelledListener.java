@@ -1,5 +1,6 @@
 package nl.invokedynamic.demo.waitinglist.events;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.events.ReservationCancelledEvent;
 import nl.invokedynamic.demo.waitinglist.service.WaitingListService;
@@ -23,7 +24,7 @@ public class ReservationCancelledListener {
             if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
                 message = objectMapper.readValue(message, String.class);
             }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            JsonNode node = objectMapper.readTree(message);
             if (node.has("releasedTableIds") || node.has("reason") || message.contains("ReservationCancelled")) {
                 ReservationCancelledEvent event = objectMapper.treeToValue(node, ReservationCancelledEvent.class);
                 waitingListService.processCancellationOpening(

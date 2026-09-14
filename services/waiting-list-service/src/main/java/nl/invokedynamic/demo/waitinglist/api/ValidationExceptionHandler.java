@@ -42,17 +42,18 @@ public class ValidationExceptionHandler {
         pd.setType(VALIDATION_ERROR_TYPE);
         pd.setTitle("Validation Failed");
 
-        List<Map<String, String>> invalidParams = new ArrayList<>();
-        ex.getParameterValidationResults().forEach(result -> {
-            String paramName = result.getMethodParameter().getParameterName();
-            result.getResolvableErrors().forEach(err -> {
-                String field = err instanceof FieldError fe ? fe.getField() : (paramName != null ? paramName : "parameter");
-                invalidParams.add(Map.of(
-                        "name", field,
-                        "reason", Objects.requireNonNullElse(err.getDefaultMessage(), "Invalid parameter value")
-                ));
-            });
-        });
+        List<Map<String, String>> invalidParams = ex.getParameterValidationResults().stream()
+                .flatMap(result -> {
+                    String paramName = result.getMethodParameter().getParameterName();
+                    return result.getResolvableErrors().stream().map(err -> {
+                        String field = err instanceof FieldError fe ? fe.getField() : (paramName != null ? paramName : "parameter");
+                        return Map.of(
+                                "name", field,
+                                "reason", Objects.requireNonNullElse(err.getDefaultMessage(), "Invalid parameter value")
+                        );
+                    });
+                })
+                .toList();
 
         pd.setProperty("invalidParams", invalidParams);
         return ResponseEntity.badRequest().body(pd);

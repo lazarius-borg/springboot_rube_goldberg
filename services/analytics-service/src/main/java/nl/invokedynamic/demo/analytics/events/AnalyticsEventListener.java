@@ -1,5 +1,6 @@
 package nl.invokedynamic.demo.analytics.events;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.analytics.domain.ProcessedEventEntity;
 import nl.invokedynamic.demo.analytics.repository.ProcessedEventRepository;
@@ -34,7 +35,7 @@ public class AnalyticsEventListener {
             if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
                 message = objectMapper.readValue(message, String.class);
             }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            JsonNode node = objectMapper.readTree(message);
             if (node.has("allocatedTableIds") || message.contains("ReservationCreated")) {
                 ReservationCreatedEvent event = objectMapper.treeToValue(node, ReservationCreatedEvent.class);
                 if (processedEventRepository.existsById(event.eventId())) return;
@@ -60,7 +61,7 @@ public class AnalyticsEventListener {
             if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
                 message = objectMapper.readValue(message, String.class);
             }
-            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            JsonNode node = objectMapper.readTree(message);
             if (node.has("reservationId") || message.contains("WaitingListOfferAccepted")) {
                 WaitingListOfferAcceptedEvent event = objectMapper.treeToValue(node, WaitingListOfferAcceptedEvent.class);
                 if (processedEventRepository.existsById(event.eventId())) return;
