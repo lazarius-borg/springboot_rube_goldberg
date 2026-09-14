@@ -84,4 +84,72 @@ class ReservationSecurityTest {
             assertThat(actuatorRes.getStatus()).isEqualTo(401);
         });
     }
+
+    @Test
+    void shouldAcceptExternalAndInternalIssuersInMultiIssuerValidator() {
+        var validator = new nl.invokedynamic.demo.reservation.config.JwtMultiIssuerValidator(
+                java.util.List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
+        );
+
+        org.springframework.security.oauth2.jwt.Jwt externalJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-1")
+                .header("alg", "none")
+                .issuer("http://localhost:8081/realms/rube-goldberg")
+                .subject("test-user")
+                .build();
+
+        org.springframework.security.oauth2.jwt.Jwt internalJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-2")
+                .header("alg", "none")
+                .issuer("http://keycloak:8080/realms/rube-goldberg")
+                .subject("test-user")
+                .build();
+
+        assertThat(validator.validate(externalJwt).hasErrors()).isFalse();
+        assertThat(validator.validate(internalJwt).hasErrors()).isFalse();
+    }
+
+    @Test
+    void shouldRejectUntrustedIssuerInMultiIssuerValidator() {
+        var validator = new nl.invokedynamic.demo.reservation.config.JwtMultiIssuerValidator(
+                java.util.List.of("http://localhost:8081/realms/rube-goldberg", "http://keycloak:8080/realms/rube-goldberg")
+        );
+
+        org.springframework.security.oauth2.jwt.Jwt untrustedJwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token-3")
+                .header("alg", "none")
+                .issuer("http://untrusted-auth.org/realms/rube-goldberg")
+                .subject("test-user")
+                .build();
+
+        var result = validator.validate(untrustedJwt);
+        assertThat(result.hasErrors()).isTrue();
+        assertThat(result.getErrors()).anyMatch(e -> e.getDescription().contains("The iss claim is not valid"));
+    }
+
+    @Test
+    void shouldActivateMultiIssuerJwtDecoderUnderDockerProfile() {
+        new WebApplicationContextRunner()
+                .withUserConfiguration(SecurityConfig.class)
+                .withPropertyValues(
+                        "spring.profiles.active=docker",
+                        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://example.com/jwks"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasBean("multiIssuerJwtDecoder");
+                    assertThat(context).doesNotHaveBean("singleIssuerJwtDecoder");
+                });
+    }
+
+    @Test
+    void shouldFallbackToSingleIssuerJwtDecoderWhenDockerProfileNotActive() {
+        new WebApplicationContextRunner()
+                .withUserConfiguration(SecurityConfig.class)
+                .withPropertyValues(
+                        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://example.com/jwks"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasBean("singleIssuerJwtDecoder");
+                    assertThat(context).doesNotHaveBean("multiIssuerJwtDecoder");
+                });
+    }
 }

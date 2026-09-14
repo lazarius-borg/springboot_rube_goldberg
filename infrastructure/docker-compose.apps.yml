@@ -9,6 +9,7 @@ services:
     ports:
       - "8080:8080"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8080
       - REDIS_HOST=redis
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
@@ -32,12 +33,14 @@ services:
     ports:
       - "8082:8082"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8082
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/customer_db
       - SPRING_DATASOURCE_USERNAME=rube_user
       - SPRING_DATASOURCE_PASSWORD=rube_password
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
+      - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,12 +57,14 @@ services:
     ports:
       - "8083:8083"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8083
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/restaurant_db
       - SPRING_DATASOURCE_USERNAME=rube_user
       - SPRING_DATASOURCE_PASSWORD=rube_password
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
+      - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,6 +81,7 @@ services:
     ports:
       - "8084:8084"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8084
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/availability_db
       - SPRING_DATASOURCE_USERNAME=rube_user
@@ -83,6 +89,7 @@ services:
       - REDIS_HOST=redis
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
+      - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,12 +108,14 @@ services:
     ports:
       - "8085:8085"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8085
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/reservation_db
       - SPRING_DATASOURCE_USERNAME=rube_user
       - SPRING_DATASOURCE_PASSWORD=rube_password
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
+      - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,12 +132,14 @@ services:
     ports:
       - "8086:8086"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8086
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/waiting_list_db
       - SPRING_DATASOURCE_USERNAME=rube_user
       - SPRING_DATASOURCE_PASSWORD=rube_password
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
+      - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
     depends_on:
       postgres:
         condition: service_healthy
@@ -145,6 +156,7 @@ services:
     ports:
       - "8088:8088"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8088
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/notification_db
       - SPRING_DATASOURCE_USERNAME=rube_user
@@ -170,6 +182,7 @@ services:
     ports:
       - "8087:8087"
     environment:
+      - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8087
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/analytics_db
       - SPRING_DATASOURCE_USERNAME=rube_user

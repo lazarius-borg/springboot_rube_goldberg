@@ -369,6 +369,16 @@ curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/customers
 
 A valid token returns `HTTP/1.1 200 OK` with customer profile data. Unauthenticated requests or invalid tokens return `HTTP/1.1 401 Unauthorized`.
 
+### Multi-Issuer JWT Validation & Environment Topology
+
+The platform supports profile-based token validation across different network topologies (local development vs containerized Docker Compose):
+- **External Host Issuer**: `http://localhost:8081/realms/rube-goldberg` (tokens minted from host browser, Swagger UI, or host CLI)
+- **Internal Docker Issuer**: `http://keycloak:8080/realms/rube-goldberg` (tokens minted inside the Docker network or between microservices)
+
+All secured domain microservices (`customer-service`, `restaurant-service`, `availability-service`, `reservation-service`, `waiting-list-service`) dynamically configure their `JwtDecoder` based on the active Spring profile:
+- In **Docker Compose** (`docker` profile via `SPRING_PROFILES_ACTIVE=docker`): The `@Profile("docker")` bean `multiIssuerJwtDecoder` is activated. It uses `JwtMultiIssuerValidator` with `security.jwt.accepted-issuers` to accept tokens minted against both the internal Keycloak network (`http://keycloak:8080/...`) and external host requests via Swagger UI (`http://localhost:8081/...`).
+- In **Local Development** (when the `docker` profile is not active): The `@Profile("!docker")` bean `singleIssuerJwtDecoder` is active as a fallback. It uses standard Spring Security single-issuer validation strictly against `spring.security.oauth2.resourceserver.jwt.issuer-uri` (`http://localhost:8081/...`).
+
 ---
 
 ## 📊 Observability & Telemetry
