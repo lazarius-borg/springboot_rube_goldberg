@@ -35,6 +35,9 @@ public class ReservationEntity {
     @Column(nullable = false, length = 30)
     private String status;
 
+    @Column(name = "cancellation_window_hours", nullable = false)
+    private int cancellationWindowHours = 2;
+
     @Column(name = "cancellation_reason")
     private String cancellationReason;
 
@@ -52,6 +55,12 @@ public class ReservationEntity {
     public ReservationEntity(UUID id, UUID restaurantId, UUID customerId, String customerName, String customerEmail,
                              int partySize, Instant startTime, Instant endTime, String status,
                              Instant createdAt, Instant updatedAt) {
+        this(id, restaurantId, customerId, customerName, customerEmail, partySize, startTime, endTime, status, 2, createdAt, updatedAt);
+    }
+
+    public ReservationEntity(UUID id, UUID restaurantId, UUID customerId, String customerName, String customerEmail,
+                             int partySize, Instant startTime, Instant endTime, String status,
+                             int cancellationWindowHours, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.restaurantId = restaurantId;
         this.customerId = customerId;
@@ -61,6 +70,7 @@ public class ReservationEntity {
         this.startTime = startTime;
         this.endTime = endTime;
         this.status = status;
+        this.cancellationWindowHours = cancellationWindowHours > 0 ? cancellationWindowHours : 2;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -75,6 +85,9 @@ public class ReservationEntity {
     public Instant getEndTime() { return endTime; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public void setStatus(ReservationStatus status) { this.status = status.name(); }
+    public int getCancellationWindowHours() { return cancellationWindowHours; }
+    public void setCancellationWindowHours(int cancellationWindowHours) { this.cancellationWindowHours = cancellationWindowHours; }
     public String getCancellationReason() { return cancellationReason; }
     public void setCancellationReason(String cancellationReason) { this.cancellationReason = cancellationReason; }
     public Instant getCreatedAt() { return createdAt; }

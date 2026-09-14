@@ -43,8 +43,12 @@ public class NotificationEventListener {
     @Transactional
     public void onReservationEvent(String message) {
         try {
-            if (message.contains("ReservationCreated")) {
-                ReservationCreatedEvent event = objectMapper.readValue(message, ReservationCreatedEvent.class);
+            if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
+                message = objectMapper.readValue(message, String.class);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            if (node.has("allocatedTableIds") || message.contains("ReservationCreated")) {
+                ReservationCreatedEvent event = objectMapper.treeToValue(node, ReservationCreatedEvent.class);
                 if (isAlreadyProcessed(event.eventId(), "ReservationCreated")) return;
 
                 String body = templateRenderer.renderReservationConfirmed(
@@ -59,8 +63,8 @@ public class NotificationEventListener {
                 ));
                 markProcessed(event.eventId(), "ReservationCreated");
 
-            } else if (message.contains("ReservationCancelled")) {
-                ReservationCancelledEvent event = objectMapper.readValue(message, ReservationCancelledEvent.class);
+            } else if (node.has("releasedTableIds") || node.has("reason") || message.contains("ReservationCancelled")) {
+                ReservationCancelledEvent event = objectMapper.treeToValue(node, ReservationCancelledEvent.class);
                 if (isAlreadyProcessed(event.eventId(), "ReservationCancelled")) return;
 
                 String body = templateRenderer.renderReservationCancelled(event.reason());
@@ -75,8 +79,12 @@ public class NotificationEventListener {
     @Transactional
     public void onWaitingListEvent(String message) {
         try {
-            if (message.contains("WaitingListOfferCreated")) {
-                WaitingListOfferCreatedEvent event = objectMapper.readValue(message, WaitingListOfferCreatedEvent.class);
+            if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
+                message = objectMapper.readValue(message, String.class);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            if (node.has("expiresAt") || node.has("offeredTableIds") || message.contains("WaitingListOfferCreated")) {
+                WaitingListOfferCreatedEvent event = objectMapper.treeToValue(node, WaitingListOfferCreatedEvent.class);
                 if (isAlreadyProcessed(event.eventId(), "WaitingListOfferCreated")) return;
 
                 String body = templateRenderer.renderWaitingListOffer(

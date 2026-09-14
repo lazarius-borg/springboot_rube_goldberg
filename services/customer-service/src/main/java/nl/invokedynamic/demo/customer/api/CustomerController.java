@@ -1,8 +1,13 @@
 package nl.invokedynamic.demo.customer.api;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import nl.invokedynamic.demo.customer.domain.CustomerProfileEntity;
 import nl.invokedynamic.demo.customer.service.CustomerService;
 import org.springframework.http.ResponseEntity;
@@ -37,10 +42,23 @@ public class CustomerController {
     @Operation(summary = "Update customer contact details")
     @ApiResponse(responseCode = "200", description = "Customer profile updated")
     public ResponseEntity<CustomerProfileEntity> updateProfile(@AuthenticationPrincipal Jwt jwt,
-                                                               @RequestBody UpdateCustomerRequest req) {
+                                                               @Valid @RequestBody UpdateCustomerRequest req) {
         String sub = jwt != null ? jwt.getSubject() : "anonymous-demo";
         return ResponseEntity.ok(customerService.updateProfile(sub, req.firstName(), req.lastName(), req.phoneNumber()));
     }
 
-    public record UpdateCustomerRequest(String firstName, String lastName, String phoneNumber) {}
+    public record UpdateCustomerRequest(
+            @NotBlank @Size(max = 50)
+            @Schema(description = "Customer first name", example = "Alice", maxLength = 50, requiredMode = Schema.RequiredMode.REQUIRED)
+            String firstName,
+
+            @NotBlank @Size(max = 50)
+            @Schema(description = "Customer last name", example = "Smith", maxLength = 50, requiredMode = Schema.RequiredMode.REQUIRED)
+            String lastName,
+
+            @NotBlank @Size(min = 5, max = 25)
+            @Pattern(regexp = "^[+0-9() -]+$", message = "Phone number must contain only numbers, +, -, (), and spaces")
+            @Schema(description = "Contact phone number (5 to 25 characters)", example = "+31612345678", minLength = 5, maxLength = 25, requiredMode = Schema.RequiredMode.REQUIRED)
+            String phoneNumber
+    ) {}
 }

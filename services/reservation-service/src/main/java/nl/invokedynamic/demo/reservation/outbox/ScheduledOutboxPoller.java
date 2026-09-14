@@ -10,8 +10,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import java.util.concurrent.TimeUnit;
+
 @Component
 public class ScheduledOutboxPoller {
+
+    private static final Logger log = LoggerFactory.getLogger(ScheduledOutboxPoller.class);
 
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
@@ -27,11 +33,12 @@ public class ScheduledOutboxPoller {
         List<OutboxEventEntity> pending = outboxEventRepository.findTop50ByPublishedFalseOrderByCreatedAtAsc();
         for (OutboxEventEntity event : pending) {
             try {
-                kafkaTemplate.send("reservation.events", event.getAggregateId(), event.getPayload());
+                kafkaTemplate.send("reservation.events", event.getAggregateId(), event.getPayload()).get(5, TimeUnit.SECONDS);
                 event.setPublished(true);
                 event.setPublishedAt(Instant.now());
                 outboxEventRepository.save(event);
             } catch (Exception e) {
+                log.warn("Failed to publish outbox event {}: {}. Will retry on next run.", event.getId(), e.getMessage());
                 break;
             }
         }

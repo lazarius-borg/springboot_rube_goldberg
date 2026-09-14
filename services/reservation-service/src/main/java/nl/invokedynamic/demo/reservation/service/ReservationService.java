@@ -42,6 +42,16 @@ public class ReservationService {
                                                int durationMinutes,
                                                List<TableAllocationEngine.TableCandidate> tableInventory,
                                                List<TableAllocationEngine.CombinationCandidate> combinations) {
+        return createReservation(restaurantId, customerId, customerName, customerEmail, partySize, startTime, durationMinutes, 2, tableInventory, combinations);
+    }
+
+    @Transactional
+    public ReservationEntity createReservation(UUID restaurantId, UUID customerId, String customerName,
+                                               String customerEmail, int partySize, Instant startTime,
+                                               int durationMinutes,
+                                               int cancellationWindowHours,
+                                               List<TableAllocationEngine.TableCandidate> tableInventory,
+                                               List<TableAllocationEngine.CombinationCandidate> combinations) {
         Instant endTime = startTime.plus(Duration.ofMinutes(durationMinutes > 0 ? durationMinutes : 90));
         Set<UUID> occupied = new HashSet<>(allocationRepository.findOccupiedTableIds(restaurantId, startTime, endTime));
 
@@ -54,7 +64,9 @@ public class ReservationService {
         Instant now = Instant.now();
         ReservationEntity reservation = new ReservationEntity(
                 reservationId, restaurantId, customerId, customerName, customerEmail,
-                partySize, startTime, endTime, "CONFIRMED", now, now
+                partySize, startTime, endTime, "CONFIRMED",
+                cancellationWindowHours > 0 ? cancellationWindowHours : 2,
+                now, now
         );
         reservationRepository.save(reservation);
 
@@ -103,9 +115,10 @@ public class ReservationService {
             return reservation;
         }
 
-        Instant deadline = reservation.getStartTime().minus(Duration.ofHours(cancellationWindowHours));
+        int effectiveWindow = reservation.getCancellationWindowHours() > 0 ? reservation.getCancellationWindowHours() : 2;
+        Instant deadline = reservation.getStartTime().minus(Duration.ofHours(effectiveWindow));
         if (Instant.now().isAfter(deadline)) {
-            throw new IllegalStateException("Cancellation deadline has passed (minimum " + cancellationWindowHours + " hours notice required)");
+            throw new IllegalStateException("Cancellation deadline has passed (minimum " + effectiveWindow + " hours notice required)");
         }
 
         List<UUID> releasedTables = getAllocatedTables(id);
@@ -135,20 +148,27 @@ public class ReservationService {
 
     @Transactional
     public ReservationEntity updateStatus(UUID id, String newStatus) {
+        return updateStatus(id, ReservationStatus.valueOf(newStatus));
+    }
+
+    @Transactional
+    public ReservationEntity updateStatus(UUID id, ReservationStatus newStatus) {
         ReservationEntity reservation = reservationRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reservation not found: " + id));
 
         String previousStatus = reservation.getStatus();
+        String targetStatus = newStatus.name();
+
         // Validate state machine: CONFIRMED -> ARRIVED -> COMPLETED, or CONFIRMED -> NO_SHOW / CANCELLED
-        if ("CONFIRMED".equals(previousStatus) && ("ARRIVED".equals(newStatus) || "NO_SHOW".equals(newStatus) || "CANCELLED".equals(newStatus))
-                || "ARRIVED".equals(previousStatus) && "COMPLETED".equals(newStatus)) {
-            reservation.setStatus(newStatus);
+        if ("CONFIRMED".equals(previousStatus) && ("ARRIVED".equals(targetStatus) || "NO_SHOW".equals(targetStatus) || "CANCELLED".equals(targetStatus))
+                || "ARRIVED".equals(previousStatus) && "COMPLETED".equals(targetStatus)) {
+            reservation.setStatus(targetStatus);
             reservation.setUpdatedAt(Instant.now());
             reservationRepository.save(reservation);
 
             try {
                 ReservationStatusChangedEvent event = new ReservationStatusChangedEvent(
-                        UUID.randomUUID(), Instant.now(), id, reservation.getRestaurantId(), previousStatus, newStatus
+                        UUID.randomUUID(), Instant.now(), id, reservation.getRestaurantId(), previousStatus, targetStatus
                 );
                 outboxRepository.save(new OutboxEventEntity(
                         UUID.randomUUID(), "Reservation", id.toString(), "ReservationStatusChanged",
@@ -157,9 +177,10 @@ public class ReservationService {
             } catch (Exception e) {
                 throw new RuntimeException("Failed to serialize outbox event", e);
             }
+
             return reservation;
         }
 
-        throw new IllegalArgumentException("Invalid state transition from " + previousStatus + " to " + newStatus);
+        throw new IllegalArgumentException("Invalid state transition from " + previousStatus + " to " + targetStatus);
     }
 }

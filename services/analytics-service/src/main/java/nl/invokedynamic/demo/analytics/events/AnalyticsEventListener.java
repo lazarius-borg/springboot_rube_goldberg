@@ -31,15 +31,19 @@ public class AnalyticsEventListener {
     @Transactional
     public void onReservationEvent(String message) {
         try {
-            if (message.contains("ReservationCreated")) {
-                ReservationCreatedEvent event = objectMapper.readValue(message, ReservationCreatedEvent.class);
+            if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
+                message = objectMapper.readValue(message, String.class);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            if (node.has("allocatedTableIds") || message.contains("ReservationCreated")) {
+                ReservationCreatedEvent event = objectMapper.treeToValue(node, ReservationCreatedEvent.class);
                 if (processedEventRepository.existsById(event.eventId())) return;
                 analyticsService.recordReservationCreated(
                         event.restaurantId(), event.startTime().atZone(ZoneOffset.UTC).toLocalDate(), event.partySize()
                 );
                 processedEventRepository.save(new ProcessedEventEntity(event.eventId(), "ReservationCreated", "analytics-group", Instant.now()));
-            } else if (message.contains("ReservationCancelled")) {
-                ReservationCancelledEvent event = objectMapper.readValue(message, ReservationCancelledEvent.class);
+            } else if (node.has("releasedTableIds") || node.has("reason") || message.contains("ReservationCancelled")) {
+                ReservationCancelledEvent event = objectMapper.treeToValue(node, ReservationCancelledEvent.class);
                 if (processedEventRepository.existsById(event.eventId())) return;
                 analyticsService.recordReservationCancelled(
                         event.restaurantId(), event.startTime().atZone(ZoneOffset.UTC).toLocalDate()
@@ -53,8 +57,12 @@ public class AnalyticsEventListener {
     @Transactional
     public void onWaitingListEvent(String message) {
         try {
-            if (message.contains("WaitingListOfferAccepted")) {
-                WaitingListOfferAcceptedEvent event = objectMapper.readValue(message, WaitingListOfferAcceptedEvent.class);
+            if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
+                message = objectMapper.readValue(message, String.class);
+            }
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(message);
+            if (node.has("reservationId") || message.contains("WaitingListOfferAccepted")) {
+                WaitingListOfferAcceptedEvent event = objectMapper.treeToValue(node, WaitingListOfferAcceptedEvent.class);
                 if (processedEventRepository.existsById(event.eventId())) return;
                 analyticsService.recordWaitingListOfferAccepted(
                         event.restaurantId(), event.timestamp().atZone(ZoneOffset.UTC).toLocalDate()

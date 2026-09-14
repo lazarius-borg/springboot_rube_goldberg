@@ -130,8 +130,40 @@ Each microservice providing REST APIs automatically exposes a rich, interactive 
    - Event consumers record processed `event_id` keys in a `processed_events` table to safely ignore duplicate Kafka deliveries.
 4. **Deterministic Table Allocation Algorithm**:
    - Single tables are evaluated first (choosing the smallest table that accommodates the party size). If no single table suffices, configured table combinations are evaluated.
-5. **RFC 9457 Problem Details**:
-   - All REST APIs return standard `application/problem+json` error responses for bad requests, validation errors, and booking conflicts (`HTTP 409 Conflict`).
+5. **RFC 7807 / RFC 9457 Problem Details & Input Constraints**:
+   - All REST APIs reject malformed, out-of-bounds, or invalid inputs at the controller boundary with standard `application/problem+json` error responses (HTTP 400 Bad Request).
+   - **Type-Safe Model Binding & Validation**:
+     - Endpoints with JSON payloads (e.g. `POST /api/v1/reservations`, `POST /api/v1/restaurants`) bind and validate requests via `@Valid @RequestBody`.
+     - Query-parameter endpoints (such as `GET /api/v1/availability`) use Spring MVC `@Valid @ModelAttribute AvailabilityQuery query` to map HTTP GET query parameters into a strongly-typed, immutable record and enforce Jakarta validation constraints before entering the service layer.
+   - Validation failures provide structured field-level errors via the `invalidParams` array with `name` and `reason` pairs:
+     ```json
+     {
+       "type": "https://example.invalid/problems/validation-error",
+       "title": "Validation Failed",
+       "status": 400,
+       "detail": "One or more request fields failed validation",
+       "invalidParams": [
+         { "name": "partySize", "reason": "Party size cannot exceed 50 guests" },
+         { "name": "durationMinutes", "reason": "Duration cannot exceed 480 minutes (8 hours)" }
+       ]
+     }
+     ```
+   - **Lifecycle Transitions**: Type-safe transitions on `PATCH /api/v1/reservations/{id}/status` enforce `ReservationStatus` enum values (`CONFIRMED`, `ARRIVED`, `COMPLETED`, `NO_SHOW`, `CANCELLED`). Unrecognized values return a descriptive error with allowed statuses.
+   - **Authoritative Cancellation Policy**: Restaurants define `cancellationWindowHours`, which is snapshotted onto bookings upon creation. Client-supplied query parameters on cancellation are deprecated and ignored by `ReservationService` to guarantee that restaurant policies cannot be bypassed.
+   - **Comprehensive Input Constraints Reference**:
+
+     | Microservice | Endpoint / DTO | Parameter / Field | Type & Constraints | Default / Notes |
+     | :--- | :--- | :--- | :--- | :--- |
+     | **availability-service** | `GET /api/v1/availability`<br>`(@ModelAttribute AvailabilityQuery)` | `restaurantId`<br>`date`<br>`time`<br>`partySize` | UUID, `@NotNull`<br>LocalDate, `@NotNull`<br>LocalTime, `@NotNull`<br>Integer, `@Min(1) @Max(50)` | Required<br>Required (`YYYY-MM-DD`)<br>Required (`HH:mm:ss`)<br>Defaults to `2` |
+     | **reservation-service** | `POST /api/v1/reservations`<br>`(@RequestBody CreateReservationRequest)` | `restaurantId`<br>`customerId`<br>`customerName`<br>`customerEmail`<br>`partySize`<br>`startTime`<br>`durationMinutes`<br>`cancellationWindowHours` | UUID, `@NotNull`<br>UUID<br>String, `@Size(max = 200)`<br>String, `@Email @Size(max = 255)`<br>Integer, `@Min(1) @Max(50)`<br>Instant (ISO-8601)<br>Integer, `@Min(15) @Max(480)`<br>Integer, `@Min(0) @Max(168)` | Required<br>Defaults to generated UUID<br>Defaults to `"Customer"`<br>Defaults to `"customer@example.com"`<br>Defaults to `2`<br>Role-based: customer must be future/clock-skew<br>Defaults to `90` min<br>Defaults to `2` or restaurant policy |
+     | | `PATCH /api/v1/reservations/{id}/status`<br>`(@RequestBody UpdateStatusRequest)` | `status` | `ReservationStatus` enum, `@NotNull` | `CONFIRMED`, `ARRIVED`, `COMPLETED`, `NO_SHOW`, `CANCELLED` |
+     | | `DELETE /api/v1/reservations/{id}` | `cancellationWindowHours`<br>`reason` | int (Deprecated / Ignored)<br>String (Optional) | Evaluated strictly against snapshotted window<br>Returns HTTP 409 if window has passed |
+     | **restaurant-service** | `POST /api/v1/restaurants`<br>`(@RequestBody CreateRestaurantRequest)` | `name`<br>`address`<br>`timezone`<br>`defaultReservationDurationMinutes`<br>`minBookingAdvanceMinutes`<br>`maxBookingHorizonDays`<br>`cancellationWindowHours` | String, `@NotBlank @Size(max = 150)`<br>String, `@NotBlank @Size(max = 1000)`<br>String, `@NotBlank @Size(max = 50)`<br>Integer, `@Min(15) @Max(480)`<br>Integer, `@Min(0) @Max(10080)`<br>Integer, `@Min(1) @Max(365)`<br>Integer, `@Min(0) @Max(168)` | Required<br>Required<br>Valid IANA timezone (`Europe/Amsterdam`)<br>Defaults to `90` min<br>Defaults to `30` min<br>Defaults to `60` days<br>Defaults to `2` hours |
+     | | `POST /api/v1/restaurants/{id}/tables`<br>`(@RequestBody CreateTableRequest)` | `tableNumber`<br>`capacity` | String, `@NotBlank @Size(max = 50)`<br>Integer, `@NotNull @Min(1) @Max(50)` | Table label (e.g. `"T1"`)<br>Guest seating capacity |
+     | | `POST /api/v1/restaurants/{id}/table-combinations`<br>`(@RequestBody CreateCombinationRequest)` | `name`<br>`tableIds` | String, `@NotBlank @Size(max = 100)`<br>List&lt;UUID&gt;, `@NotEmpty @Size(min = 2, max = 10)` | Combination name (e.g. `"Party Hall 1"`)<br>Must contain &ge; 2 distinct table IDs |
+     | | `PUT /api/v1/restaurants/{id}/opening-hours`<br>`(@RequestBody OpeningHoursConfigDto)` | `schedules[].dayOfWeek`<br>`schedules[].openTime`<br>`schedules[].closeTime`<br>`schedules[].isClosed` | Integer, `@Min(1) @Max(7)`<br>LocalTime, `@NotNull`<br>LocalTime, `@NotNull`<br>boolean | 1 = Monday, 7 = Sunday<br>Daily opening time<br>Must be strictly after `openTime`<br>Flag for scheduled closures |
+     | **waiting-list-service** | `POST /api/v1/waiting-list`<br>`(@RequestBody JoinWaitingListRequest)` | `restaurantId`<br>`customerEmail`<br>`targetDate`<br>`earliestTime`<br>`latestTime`<br>`partySize` | UUID, `@NotNull`<br>String, `@NotBlank @Email @Size(max = 255)`<br>LocalDate, `@NotNull`<br>LocalTime, `@NotNull`<br>LocalTime, `@NotNull`<br>int, `@Min(1) @Max(50)` | Required restaurant UUID<br>Required customer email<br>Must be current or future (`>= today`)<br>Must be &le; `latestTime`<br>Must be &ge; `earliestTime`<br>Party size between 1 and 50 |
+     | **customer-service** | `PUT /api/v1/customers/me`<br>`(@RequestBody UpdateCustomerRequest)` | `firstName`<br>`lastName`<br>`phoneNumber` | String, `@NotBlank @Size(max = 50)`<br>String, `@NotBlank @Size(max = 50)`<br>String, `@NotBlank @Size(min = 5, max = 25)` | Required<br>Required<br>Pattern: `^[+0-9() -]+$` |
 
 ---
 
@@ -229,7 +261,7 @@ CUSTOMER_TOKEN=$(curl -s -X POST "http://localhost:8081/realms/rube-goldberg/pro
 ### Step 1: Register a Restaurant & Tables (`restaurant-service: 8083`)
 *Requires `RESTAURANT_MANAGER` or `ADMIN` role.*
 ```bash
-# 1. Create Restaurant
+# 1. Create Restaurant with authoritative operational boundaries
 REST_ID=$(curl -s -X POST http://localhost:8083/api/v1/restaurants \
   -H "Authorization: Bearer $MANAGER_TOKEN" \
   -H "Content-Type: application/json" \
@@ -238,24 +270,40 @@ REST_ID=$(curl -s -X POST http://localhost:8083/api/v1/restaurants \
     "address": "100 Reactor Way, Amsterdam",
     "timezone": "Europe/Amsterdam",
     "defaultReservationDurationMinutes": 90,
+    "minBookingAdvanceMinutes": 30,
+    "maxBookingHorizonDays": 60,
     "cancellationWindowHours": 2
   }' | jq -r '.id')
 echo "Created Restaurant ID: $REST_ID"
 
-# 2. Add Table 1 (Capacity: 4)
+# 2. Add Table 1 (Capacity: 4 guests, bounded 1-50)
 curl -s -X POST http://localhost:8083/api/v1/restaurants/$REST_ID/tables \
   -H "Authorization: Bearer $MANAGER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"tableNumber": "T1", "capacity": 4}' | jq .
 ```
+> [!NOTE]
+> `CreateRestaurantRequest` validates that `name` (&le; 150 chars) and `address` (&le; 1000 chars) are non-blank, `timezone` is a valid IANA zone ID, `defaultReservationDurationMinutes` is between 15 and 480, `minBookingAdvanceMinutes` is between 0 and 10,080 (7 days), `maxBookingHorizonDays` is between 1 and 365, and `cancellationWindowHours` is between 0 and 168 hours.
 
 ### Step 2: Query Real-Time Availability (`availability-service: 8084`)
-*Accessible to all authenticated platform roles (`CUSTOMER`, `RESTAURANT_MANAGER`, `ADMIN`).*
+*Accessible to all platform roles (`CUSTOMER`, `RESTAURANT_MANAGER`, `ADMIN`).*
+
+The `availability-service` binds GET query parameters into a strongly-typed `@Valid @ModelAttribute AvailabilityQuery query` record:
 ```bash
 curl -s -H "Authorization: Bearer $CUSTOMER_TOKEN" \
   "http://localhost:8084/api/v1/availability?restaurantId=$REST_ID&date=2026-09-01&time=19:00:00&partySize=4" | jq .
 ```
 *Expected: `isAvailable: true`*
+
+> [!TIP]
+> **Model Attribute Binding & Bounds**:
+> The `AvailabilityQuery` record components are bound directly from HTTP GET query parameters:
+> - `restaurantId` (UUID, `@NotNull`, required)
+> - `date` (`LocalDate` in `YYYY-MM-DD` ISO format, `@NotNull`, required)
+> - `time` (`LocalTime` in `HH:mm:ss` ISO format, `@NotNull`, required)
+> - `partySize` (`Integer`, bounded `@Min(1) @Max(50)`, optional — defaults to `2` if omitted)
+>
+> If validation fails (e.g. `partySize=99` or missing required fields), Spring MVC and `ValidationExceptionHandler` automatically return an RFC 7807 `400 Bad Request` with field-level details in `invalidParams`.
 
 ### Step 3: Book the Table (Guaranteed Reservation) (`reservation-service: 8085`)
 *Requires `CUSTOMER` role (managers/admins without the customer role receive 403 Forbidden).*
@@ -269,18 +317,22 @@ RES_ID=$(curl -s -X POST http://localhost:8085/api/v1/reservations \
     \"customerName\": \"Alice\",
     \"customerEmail\": \"alice@example.com\",
     \"partySize\": 4,
-    \"startTime\": \"2026-09-01T17:00:00Z\"
+    \"startTime\": \"2026-09-01T17:00:00Z\",
+    \"durationMinutes\": 90
   }" | jq -r '.id')
 echo "Confirmed Reservation: $RES_ID"
 ```
 *Observe: Outbox publishes `ReservationCreatedEvent` → Notification service renders email → Check Mailpit at `http://localhost:8025`!*
+
+> [!NOTE]
+> `CreateReservationRequest` validates that `restaurantId` is present, `partySize` is bounded 1–50, `durationMinutes` is bounded 15–480, and `customerEmail` is a valid format (&le; 255 chars). For customer bookings, `startTime` is strictly checked against the server clock to ensure it is not in the past (with a 5-minute clock-skew grace period) and does not exceed the 365-day booking horizon.
 
 ### Step 4: Check Availability Again (Cache Invalidation) (`availability-service: 8084`)
 ```bash
 curl -s -H "Authorization: Bearer $CUSTOMER_TOKEN" \
   "http://localhost:8084/api/v1/availability?restaurantId=$REST_ID&date=2026-09-01&time=19:00:00&partySize=4" | jq .
 ```
-*Expected: `isAvailable: false` (the only 4-top table is booked).*
+*Expected: `isAvailable: false` (the only 4-top table is now booked).*
 
 ### Step 5: Join the Fair FIFO Waiting List (`waiting-list-service: 8086`)
 *Requires `CUSTOMER` role.*
@@ -299,19 +351,60 @@ WAIT_ID=$(curl -s -X POST http://localhost:8086/api/v1/waiting-list \
   }" | jq -r '.id')
 echo "Joined Waiting List: $WAIT_ID"
 ```
+> [!NOTE]
+> `JoinWaitingListRequest` validates that `partySize` is bounded 1–50, `customerEmail` is valid, `targetDate` is current or future (`>= today`), and `earliestTime` is earlier than or equal to `latestTime`.
 
 ### Step 6: Trigger the Cancellation Chain Reaction (`reservation-service: 8085`)
 *Accessible to `CUSTOMER`, `RESTAURANT_MANAGER`, or `ADMIN`.*
 ```bash
-curl -s -X DELETE "http://localhost:8085/api/v1/reservations/$RES_ID?cancellationWindowHours=2&reason=Change%20of%20plans" \
+curl -s -X DELETE "http://localhost:8085/api/v1/reservations/$RES_ID?reason=Change%20of%20plans" \
   -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq .
 ```
+> [!IMPORTANT]
+> **Authoritative Cancellation Window**:
+> The `cancellationWindowHours` query parameter is **deprecated and ignored** by the service. Cancellation deadlines are authoritatively evaluated against the restaurant's `cancellationWindowHours` snapshotted on the reservation entity when booked (`deadline = startTime - cancellationWindowHours`). If the deadline has already passed, the server responds with `HTTP 409 Conflict` (`https://example.invalid/problems/cancellation-window-passed`).
+
 *The Goldberg Cascade in Motion:*
 1. `reservation-service` marks reservation `CANCELLED`, releases Table T1, and emits `ReservationCancelledEvent`.
 2. `waiting-list-service` receives the cancellation event, matches Bob as the oldest candidate, and creates a 15-minute time-limited offer.
 3. `notification-service` emails Bob via Mailpit with his exclusive claim link.
-4. `availability-service` updates projections.
+4. `availability-service` updates Redis projections.
 5. `analytics-service` records cancellation KPI.
+
+### Step 6b: Accept Waiting List Cancellation Offer (`waiting-list-service: 8086`)
+*Requires `CUSTOMER` role.*
+```bash
+# Bob accepts the exclusive 15-minute offer:
+curl -s -X POST "http://localhost:8086/api/v1/waiting-list/offers/$OFFER_ID/accept" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" | jq .
+```
+*Expected: `200 OK` on timely acceptance. If expired past 15 minutes, returns `HTTP 410 Gone` (`https://example.invalid/problems/offer-expired`).*
+
+### Step 6c: Update Reservation Lifecycle Status (`reservation-service: 8085`)
+*Requires `RESTAURANT_MANAGER` or `ADMIN` role.*
+```bash
+# Restaurant staff updates customer arrival status:
+curl -s -X PATCH "http://localhost:8085/api/v1/reservations/$RES_ID/status" \
+  -H "Authorization: Bearer $MANAGER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "ARRIVED"}' | jq .
+```
+> [!NOTE]
+> `UpdateStatusRequest` strictly enforces the `ReservationStatus` enum: `CONFIRMED`, `ARRIVED`, `COMPLETED`, `NO_SHOW`, `CANCELLED`. Providing an invalid status string returns an RFC 7807 `400 Bad Request` listing all permitted values.
+
+### Step 6d: Query Paginated Reservations List (`reservation-service: 8085`)
+*Requires `RESTAURANT_MANAGER` or `ADMIN` role.*
+```bash
+# Query paginated reservations list using standard Spring Data Pageable query parameters:
+curl -s -H "Authorization: Bearer $MANAGER_TOKEN" \
+  "http://localhost:8085/api/v1/reservations?restaurantId=$REST_ID&page=0&size=10&sort=startTime,desc" | jq .
+```
+> [!TIP]
+> **Pagination & Sorting Query Parameters**:
+> - `restaurantId` (UUID, required): Target restaurant UUID.
+> - `page` (integer, optional, default: `0`): Zero-based page index.
+> - `size` (integer, optional, default: `20`): Number of records per page.
+> - `sort` (string, optional, e.g. `startTime,desc` or `startTime,asc`): Sort field and direction.
 
 ### Step 7: Inspect Real-Time Business Analytics (`analytics-service: 8087`)
 *Requires `RESTAURANT_MANAGER` or `ADMIN` role.*
@@ -427,15 +520,29 @@ curl -X POST "http://localhost:8081/realms/rube-goldberg/protocol/openid-connect
   -d "password=password"
 ```
 
-#### 3. Verify Token Authenticity
+#### 3. Verify Token Authenticity & Manage Customer Profile (`customer-service: 8082`)
 
-Verify that your token is valid by invoking a protected microservice endpoint (e.g. Customer Service):
+Verify that your token is valid by invoking the protected Customer Service endpoints:
 
 ```bash
-curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/customers/me
+# 1. Inspect authenticated profile (auto-provisions or retrieves Keycloak identity)
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/customers/me | jq .
+
+# 2. Update customer contact details with bounded validation
+curl -s -X PUT http://localhost:8082/api/v1/customers/me \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Alice",
+    "lastName": "Smith",
+    "phoneNumber": "+31612345678"
+  }' | jq .
 ```
 
-A valid token returns `HTTP/1.1 200 OK` with customer profile data. Unauthenticated requests or invalid tokens return `HTTP/1.1 401 Unauthorized`.
+A valid token returns `HTTP/1.1 200 OK` with updated customer profile data. Unauthenticated requests or invalid tokens return `HTTP/1.1 401 Unauthorized`.
+
+> [!NOTE]
+> `UpdateCustomerRequest` validates that `firstName` (&le; 50 chars) and `lastName` (&le; 50 chars) are non-blank, and `phoneNumber` (5 to 25 chars) strictly conforms to pattern `^[+0-9() -]+$`. Malformed inputs are rejected with RFC 7807 `400 Bad Request` (`invalidParams`).
 
 ### Multi-Issuer JWT Validation & Environment Topology
 
