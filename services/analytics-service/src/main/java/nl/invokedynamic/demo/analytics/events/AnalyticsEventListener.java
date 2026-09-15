@@ -40,14 +40,14 @@ public class AnalyticsEventListener {
                 ReservationCreatedEvent event = objectMapper.treeToValue(node, ReservationCreatedEvent.class);
                 if (processedEventRepository.existsById(event.eventId())) return;
                 analyticsService.recordReservationCreated(
-                        event.restaurantId(), event.startTime().atZone(ZoneOffset.UTC).toLocalDate(), event.partySize()
+                        event.restaurantId(), event.startTime(), event.partySize()
                 );
                 processedEventRepository.save(new ProcessedEventEntity(event.eventId(), "ReservationCreated", "analytics-group", Instant.now()));
             } else if (node.has("releasedTableIds") || node.has("reason") || message.contains("ReservationCancelled")) {
                 ReservationCancelledEvent event = objectMapper.treeToValue(node, ReservationCancelledEvent.class);
                 if (processedEventRepository.existsById(event.eventId())) return;
                 analyticsService.recordReservationCancelled(
-                        event.restaurantId(), event.startTime().atZone(ZoneOffset.UTC).toLocalDate()
+                        event.restaurantId(), event.startTime().atZone(ZoneOffset.UTC).toLocalDate(), event.reason()
                 );
                 processedEventRepository.save(new ProcessedEventEntity(event.eventId(), "ReservationCancelled", "analytics-group", Instant.now()));
             }
@@ -69,6 +69,13 @@ public class AnalyticsEventListener {
                         event.restaurantId(), event.timestamp().atZone(ZoneOffset.UTC).toLocalDate()
                 );
                 processedEventRepository.save(new ProcessedEventEntity(event.eventId(), "WaitingListOfferAccepted", "analytics-group", Instant.now()));
+            } else if (node.has("partySize") || message.contains("WaitingListEntryCreated")) {
+                WaitingListEntryCreatedEvent event = objectMapper.treeToValue(node, WaitingListEntryCreatedEvent.class);
+                if (processedEventRepository.existsById(event.eventId())) return;
+                analyticsService.recordWaitingListEntryCreated(
+                        event.restaurantId(), event.timestamp().atZone(ZoneOffset.UTC).toLocalDate()
+                );
+                processedEventRepository.save(new ProcessedEventEntity(event.eventId(), "WaitingListEntryCreated", "analytics-group", Instant.now()));
             }
         } catch (Exception ignored) {}
     }

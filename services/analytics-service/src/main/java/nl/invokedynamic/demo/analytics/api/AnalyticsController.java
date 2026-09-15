@@ -22,7 +22,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/summary")
-    @Operation(summary = "Get aggregated analytics summary", description = "Returns total reservations, cancellations, no-shows, average party size, and waiting list conversion rate.")
+    @Operation(summary = "Get aggregated analytics summary", description = "Returns total reservations, cancellations, no-shows, average party size, cancellation rate, cancellation category breakdown, party size distribution, and waiting list conversion rate.")
     @ApiResponse(responseCode = "200", description = "Analytics summary calculated")
     public ResponseEntity<AnalyticsService.AnalyticsSummary> getSummary(
             @Parameter(description = "Optional Restaurant UUID filter") @RequestParam(required = false) UUID restaurantId) {
