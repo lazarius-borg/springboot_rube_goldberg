@@ -3,6 +3,8 @@ package nl.invokedynamic.demo.availability.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.availability.domain.*;
 import nl.invokedynamic.demo.availability.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import java.time.*;
@@ -12,6 +14,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class AvailabilityService {
+
+    private static final Logger log = LoggerFactory.getLogger(AvailabilityService.class);
 
     private final RestaurantViewRepository restaurantRepository;
     private final TableInventoryViewRepository tableRepository;
@@ -73,6 +77,8 @@ public class AvailabilityService {
         }
 
         AvailabilityResult result = new AvailabilityResult(restaurantId, requestedZoned.toString(), partySize, available, suggestedSlots);
+        log.info("Checked availability for restaurant {} date {} time {} partySize {}: available={}",
+                restaurantId, date, time, partySize, available);
 
         try {
             redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(result), 60, TimeUnit.SECONDS);
@@ -82,6 +88,7 @@ public class AvailabilityService {
     }
 
     public void invalidateCache(UUID restaurantId) {
+        log.info("Invalidating availability cache for restaurant {}", restaurantId);
         try {
             Set<String> keys = redisTemplate.keys(String.format("availability:%s:*", restaurantId));
             if (keys != null && !keys.isEmpty()) {

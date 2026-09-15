@@ -17,6 +17,7 @@ exporters:
       endpoint: "http://opensearch:9200"
       tls:
         insecure: true
+    logs_index: "otel-logs"
 
 service:
   pipelines:

@@ -556,8 +556,150 @@ All secured domain microservices (`customer-service`, `restaurant-service`, `ava
 
 ---
 
-## 📊 Observability & Telemetry
+## 📊 Observability & Telemetry: OpenTelemetry, Distributed Tracing & OpenSearch
 
-- **Prometheus Metrics**: Scraped from Spring Boot `/actuator/prometheus` via OpenTelemetry Collector.
-- **Alertmanager Rules**: Defined in `infrastructure/prometheus/alert-rules.yml` for automated error rate and downtime alerts.
-- **Grafana Platform Dashboard**: Pre-configured JSON dashboard in `infrastructure/grafana/dashboards/rube-goldberg-dashboard.json`.
+The platform implements an end-to-end cloud-native observability pipeline leveraging **OpenTelemetry (OTEL)**, **Micrometer Tracing**, **Prometheus**, **Grafana**, and **OpenSearch**. Application logs, distributed traces, and metrics are unified across the API Gateway and all 7 microservices.
+
+### 🏛️ OpenTelemetry Pipeline Architecture
+
+Each Spring Boot microservice automatically emits metrics, distributed traces, and structured logs over standard OTLP (OpenTelemetry Protocol) over HTTP to the centralized **OpenTelemetry Collector**. The collector processes, batches, and routes the telemetry streams to dedicated storage backends:
+
+```mermaid
+flowchart LR
+    subgraph Services["Microservices Fleet & Gateway"]
+        GW["API Gateway<br/>(:8080)"]
+        CS["Customer Service<br/>(:8082)"]
+        RS["Restaurant Service<br/>(:8083)"]
+        AS["Availability Service<br/>(:8084)"]
+        RES["Reservation Service<br/>(:8085)"]
+        WS["Waiting List Service<br/>(:8086)"]
+        AN["Analytics Service<br/>(:8087)"]
+        NS["Notification Service<br/>(:8088)"]
+    end
+
+    subgraph OTEL["OpenTelemetry Collector (:4317 gRPC / :4318 HTTP)"]
+        Receiver["OTLP Receiver"]
+        Batcher["Batch Processor"]
+        Receiver --> Batcher
+    end
+
+    subgraph Storage["Telemetry Storage & Visualization"]
+        Prom["Prometheus (:9090)<br/><i>Metrics TSDB</i>"]
+        Grafana["Grafana (:3000)<br/><i>Operational Dashboard</i>"]
+        OS_Logs[("OpenSearch: otel-logs<br/><i>Structured Logs</i>")]
+        OS_Traces[("OpenSearch: otel-traces<br/><i>Distributed Spans</i>")]
+        OSD["OpenSearch Dashboards (:5601)<br/><i>Trace & Log Exploration</i>"]
+    end
+
+    GW & CS & RS & AS & RES & WS & AN & NS -->|OTLP /v1/logs & /v1/traces| Receiver
+    Batcher -->|traces pipeline| OS_Traces
+    Batcher -->|logs pipeline| OS_Logs
+    Batcher -->|metrics pipeline :8889| Prom
+    Prom --> Grafana
+    OS_Logs & OS_Traces --> OSD
+```
+
+---
+
+### ⚙️ Microservices Logging & Tracing Configuration
+
+All microservices and the API gateway are configured with **Dual Logging Output**:
+1. **Human-Readable Console Output**: Retained on `stdout` for local terminal inspection and real-time container log streaming via `docker compose logs -f <service>`.
+2. **Asynchronous OTLP Log Forwarding**: Log events are formatted as structured records (including timestamp, severity level, service name, logger name, thread, trace ID, and span ID) and shipped over HTTP to the collector.
+3. **W3C Distributed Trace Propagation**: Trace context (`traceparent`, `tracestate`) is injected into all outbound HTTP requests and Kafka record headers.
+4. **Resilient Non-Blocking Buffering**: In-memory bounded ring buffers ensure that temporary telemetry collector downtime never blocks or degrades user-facing request latency.
+
+#### Standardized `application.yml` Properties
+
+Each service declares these standard configuration properties:
+
+```yaml
+management:
+  tracing:
+    sampling:
+      probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0} # 100% trace capture by default
+    propagation:
+      type: W3C # W3C Trace Context standard (traceparent, tracestate)
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    logging:
+      endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://localhost:4318/v1/logs}
+
+spring:
+  kafka:
+    template:
+      observation-enabled: true # Automatically injects W3C traceparent into Kafka record headers
+    listener:
+      observation-enabled: true # Automatically extracts trace context from consumed Kafka records
+
+---
+# Docker Compose Profile Override
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+management:
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector:4318/v1/traces}
+    logging:
+      endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://otel-collector:4318/v1/logs}
+```
+
+---
+
+### 🔍 Querying Logs & Correlated Traces in OpenSearch
+
+OpenSearch stores application telemetry in:
+- **`otel-logs`**: Application log events with service metadata, logger name, message, and trace IDs.
+- **`ss4o_traces-*`** (e.g. `ss4o_traces-default-namespace`): Distributed spans following the OpenSearch SS4O (Simple Schema for Observability) standard, natively integrated with OpenSearch Dashboards Trace Analytics.
+
+#### 1. Search Application Logs by Service Name
+Retrieve recent logs from `reservation-service`:
+
+```bash
+curl -s -X POST "http://localhost:9200/otel-logs/_search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": { "match": { "serviceName": "reservation-service" } },
+    "sort": [ { "timestamp": { "order": "desc" } } ],
+    "size": 5
+  }' | jq '.hits.hits[]._source | {timestamp, serviceName, severity, message, traceId}'
+```
+
+#### 2. Correlate Logs across All Microservices by Trace ID
+Retrieve the full end-to-end execution log across Gateway, Reservation, Availability, and Notification services for a single transaction:
+
+```bash
+curl -s -X POST "http://localhost:9200/otel-logs/_search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": { "term": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" } },
+    "sort": [ { "timestamp": { "order": "asc" } } ]
+  }' | jq '.hits.hits[]._source | "\(.timestamp) [\(.serviceName)] \(.severity): \(.message)"'
+```
+
+#### 3. Inspect Distributed Trace Spans by Trace ID
+Retrieve all spans in the distributed transaction tree:
+
+```bash
+curl -s -X POST "http://localhost:9200/ss4o_traces-*/_search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": { "term": { "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" } },
+    "sort": [ { "startTime": { "order": "asc" } } ]
+  }' | jq '.hits.hits[]._source | {name, serviceName, durationInNanos, statusCode}'
+```
+
+---
+
+### 🖥️ OpenSearch Dashboards (Visual Exploration)
+
+OpenSearch Dashboards is accessible at **`http://localhost:5601`**:
+1. **Log Discovery**: Navigate to **Management** &rarr; **Index Patterns** &rarr; Create Index Pattern `otel-logs*` (time field: `timestamp`). View real-time log streams with search filters for `serviceName`, `severity`, and `traceId`.
+2. **Trace Analytics**: Navigate to **Trace Analytics** to visualize end-to-end service dependency maps, latency percentiles (p50, p95, p99), and span waterfall timelines.
+3. **Grafana Dashboards**: Access pre-provisioned operational metrics at `http://localhost:3000` (Admin: `admin` / `admin`).
+4. **Prometheus Metrics**: Query raw scraped metrics at `http://localhost:9090`.
+5. **Alertmanager Rules**: Defined in `infrastructure/prometheus/alert-rules.yml` for automated error rate and downtime alerts.

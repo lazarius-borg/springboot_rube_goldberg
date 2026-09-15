@@ -6,6 +6,8 @@ import nl.invokedynamic.demo.events.ReservationCreatedEvent;
 import nl.invokedynamic.demo.events.ReservationStatusChangedEvent;
 import nl.invokedynamic.demo.reservation.domain.*;
 import nl.invokedynamic.demo.reservation.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,8 @@ import java.util.*;
 
 @Service
 public class ReservationService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReservationService.class);
 
     private final ReservationRepository reservationRepository;
     private final ReservationTableAllocationRepository allocationRepository;
@@ -57,6 +61,7 @@ public class ReservationService {
 
         Optional<List<UUID>> allocatedTables = allocationEngine.allocateTable(partySize, tableInventory, combinations, occupied);
         if (allocatedTables.isEmpty()) {
+            log.warn("Table allocation failed for restaurant {} with party size {}", restaurantId, partySize);
             throw new IllegalStateException("No suitable tables available for party size " + partySize);
         }
 
@@ -86,9 +91,12 @@ public class ReservationService {
                     objectMapper.writeValueAsString(event), now
             ));
         } catch (Exception e) {
+            log.error("Failed to serialize outbox event for reservation {}", reservationId, e);
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
 
+        log.info("Created reservation {} for restaurant {} customer {} party size {}",
+                reservationId, restaurantId, customerId, partySize);
         return reservation;
     }
 
@@ -140,9 +148,11 @@ public class ReservationService {
                     objectMapper.writeValueAsString(event), Instant.now()
             ));
         } catch (Exception e) {
+            log.error("Failed to serialize outbox event for cancelled reservation {}", id, e);
             throw new RuntimeException("Failed to serialize outbox event", e);
         }
 
+        log.info("Cancelled reservation {} for restaurant {} with reason: {}", id, reservation.getRestaurantId(), reason);
         return reservation;
     }
 
