@@ -1,5 +1,6 @@
 package nl.invokedynamic.demo.waitinglist.events;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.events.ReservationCancelledEvent;
 import nl.invokedynamic.demo.waitinglist.service.WaitingListService;
@@ -20,8 +21,12 @@ public class ReservationCancelledListener {
     @KafkaListener(topics = "reservation.events", groupId = "waiting-list-service-group")
     public void onReservationEvent(String message) {
         try {
-            if (message.contains("ReservationCancelled")) {
-                ReservationCancelledEvent event = objectMapper.readValue(message, ReservationCancelledEvent.class);
+            if (message != null && message.startsWith("\"") && message.endsWith("\"")) {
+                message = objectMapper.readValue(message, String.class);
+            }
+            JsonNode node = objectMapper.readTree(message);
+            if (node.has("releasedTableIds") || node.has("reason") || message.contains("ReservationCancelled")) {
+                ReservationCancelledEvent event = objectMapper.treeToValue(node, ReservationCancelledEvent.class);
                 waitingListService.processCancellationOpening(
                         event.restaurantId(), event.startTime(), event.partySize(), event.releasedTableIds()
                 );

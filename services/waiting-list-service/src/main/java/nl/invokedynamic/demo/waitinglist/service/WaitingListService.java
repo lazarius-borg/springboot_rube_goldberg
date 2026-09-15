@@ -72,34 +72,36 @@ public class WaitingListService {
                 restaurantId, date, "WAITING"
         );
 
-        for (WaitingListEntryEntity entry : waiting) {
-            if (entry.getPartySize() <= partySize && !time.isBefore(entry.getEarliestTime()) && !time.isAfter(entry.getLatestTime())) {
-                entry.setStatus("OFFERED");
-                entryRepository.save(entry);
+        waiting.stream()
+                .filter(entry -> entry.getPartySize() <= partySize
+                        && !time.isBefore(entry.getEarliestTime())
+                        && !time.isAfter(entry.getLatestTime()))
+                .findFirst()
+                .ifPresent(entry -> {
+                    entry.setStatus("OFFERED");
+                    entryRepository.save(entry);
 
-                UUID offerId = UUID.randomUUID();
-                Instant now = Instant.now();
-                Instant expiresAt = now.plus(Duration.ofMinutes(15)); // 15-minute offer window
-                WaitingListOfferEntity offer = new WaitingListOfferEntity(
-                        offerId, entry.getId(), restaurantId, cancelledStart, releasedTableIds, expiresAt, "PENDING", now, now
-                );
-                offerRepository.save(offer);
-
-                try {
-                    WaitingListOfferCreatedEvent event = new WaitingListOfferCreatedEvent(
-                            UUID.randomUUID(), now, offerId, entry.getId(), restaurantId, entry.getCustomerId(),
-                            entry.getCustomerEmail(), cancelledStart, releasedTableIds, expiresAt
+                    UUID offerId = UUID.randomUUID();
+                    Instant now = Instant.now();
+                    Instant expiresAt = now.plus(Duration.ofMinutes(15)); // 15-minute offer window
+                    WaitingListOfferEntity offer = new WaitingListOfferEntity(
+                            offerId, entry.getId(), restaurantId, cancelledStart, releasedTableIds, expiresAt, "PENDING", now, now
                     );
-                    outboxRepository.save(new OutboxEventEntity(
-                            UUID.randomUUID(), "WaitingListOffer", offerId.toString(), "WaitingListOfferCreated",
-                            objectMapper.writeValueAsString(event), now
-                    ));
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to serialize offer event", e);
-                }
-                break; // Handled oldest FIFO candidate
-            }
-        }
+                    offerRepository.save(offer);
+
+                    try {
+                        WaitingListOfferCreatedEvent event = new WaitingListOfferCreatedEvent(
+                                UUID.randomUUID(), now, offerId, entry.getId(), restaurantId, entry.getCustomerId(),
+                                entry.getCustomerEmail(), cancelledStart, releasedTableIds, expiresAt
+                        );
+                        outboxRepository.save(new OutboxEventEntity(
+                                UUID.randomUUID(), "WaitingListOffer", offerId.toString(), "WaitingListOfferCreated",
+                                objectMapper.writeValueAsString(event), now
+                        ));
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to serialize offer event", e);
+                    }
+                });
     }
 
     @Transactional

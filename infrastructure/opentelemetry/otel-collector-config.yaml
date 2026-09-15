@@ -18,7 +18,6 @@ exporters:
       tls:
         insecure: true
     logs_index: "otel-logs"
-    traces_index: "otel-traces"
 
 service:
   pipelines:

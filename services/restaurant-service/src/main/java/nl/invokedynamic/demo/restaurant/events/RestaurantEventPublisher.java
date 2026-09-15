@@ -11,8 +11,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import java.util.concurrent.TimeUnit;
+
 @Component
 public class RestaurantEventPublisher {
+
+    private static final Logger log = LoggerFactory.getLogger(RestaurantEventPublisher.class);
 
     private final OutboxEventRepository outboxEventRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
@@ -32,12 +38,12 @@ public class RestaurantEventPublisher {
         List<OutboxEventEntity> pendingEvents = outboxEventRepository.findTop50ByPublishedFalseOrderByCreatedAtAsc();
         for (OutboxEventEntity event : pendingEvents) {
             try {
-                kafkaTemplate.send("restaurant.events", event.getAggregateId(), event.getPayload());
+                kafkaTemplate.send("restaurant.events", event.getAggregateId(), event.getPayload()).get(5, TimeUnit.SECONDS);
                 event.setPublished(true);
                 event.setPublishedAt(Instant.now());
                 outboxEventRepository.save(event);
             } catch (Exception e) {
-                // Log and retry on next run
+                log.warn("Failed to publish outbox event {}: {}. Will retry on next run.", event.getId(), e.getMessage());
                 break;
             }
         }

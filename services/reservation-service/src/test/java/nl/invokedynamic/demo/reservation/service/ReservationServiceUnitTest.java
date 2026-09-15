@@ -54,7 +54,7 @@ class ReservationServiceUnitTest {
         assertThat(res).isNotNull();
         assertThat(res.getStatus()).isEqualTo("CONFIRMED");
         verify(reservationRepository).save(any());
-        verify(allocationRepository).save(any());
+        verify(allocationRepository).saveAll(any());
         verify(outboxRepository).save(any());
     }
 

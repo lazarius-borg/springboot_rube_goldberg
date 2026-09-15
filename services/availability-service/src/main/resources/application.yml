@@ -31,6 +31,15 @@ spring:
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/rube-goldberg}
 
 management:
   endpoints:
@@ -41,3 +50,37 @@ management:
     health:
       probes:
         enabled: true
+  tracing:
+    sampling:
+      probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+    propagation:
+      type: W3C
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    logging:
+      endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://localhost:4318/v1/logs}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8080/realms/rube-goldberg}
+
+management:
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector:4318/v1/traces}
+    logging:
+      endpoint: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:http://otel-collector:4318/v1/logs}
+
+security:
+  jwt:
+    accepted-issuers:
+      - ${KEYCLOAK_EXTERNAL_ISSUER_URI:http://localhost:8081/realms/rube-goldberg}
+      - ${KEYCLOAK_INTERNAL_ISSUER_URI:http://keycloak:8080/realms/rube-goldberg}

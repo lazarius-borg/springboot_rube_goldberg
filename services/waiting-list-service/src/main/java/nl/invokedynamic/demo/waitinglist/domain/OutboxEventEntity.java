@@ -1,6 +1,8 @@
 package nl.invokedynamic.demo.waitinglist.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -13,7 +15,8 @@ public class OutboxEventEntity {
     private String aggregateType;
     private String aggregateId;
     private String eventType;
-    @Column(columnDefinition = "TEXT")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
     private String payload;
     private Instant createdAt;
     private boolean published = false;

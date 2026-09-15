@@ -2,11 +2,15 @@ package nl.invokedynamic.demo.restaurant.api;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
 import nl.invokedynamic.demo.restaurant.domain.*;
 import nl.invokedynamic.demo.restaurant.service.RestaurantService;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -34,7 +38,7 @@ public class RestaurantController {
 
     @GetMapping
     @Operation(summary = "List all restaurants", description = "Retrieves a paginated list of registered restaurants.")
-    public ResponseEntity<Page<RestaurantEntity>> listRestaurants(Pageable pageable) {
+    public ResponseEntity<Page<RestaurantEntity>> listRestaurants(@ParameterObject Pageable pageable) {
         return ResponseEntity.ok(restaurantService.listRestaurants(pageable));
     }
 
@@ -44,14 +48,14 @@ public class RestaurantController {
             @ApiResponse(responseCode = "201", description = "Restaurant created successfully"),
             @ApiResponse(responseCode = "400", description = "Invalid restaurant data or invalid timezone")
     })
-    public ResponseEntity<?> createRestaurant(@RequestBody CreateRestaurantRequest req) {
+    public ResponseEntity<?> createRestaurant(@Valid @RequestBody CreateRestaurantRequest req) {
         try {
             RestaurantEntity entity = restaurantService.createRestaurant(
                     req.name(), req.address(), req.timezone(),
-                    req.defaultReservationDurationMinutes() != null && req.defaultReservationDurationMinutes() > 0 ? req.defaultReservationDurationMinutes() : 90,
-                    req.minBookingAdvanceMinutes() != null && req.minBookingAdvanceMinutes() > 0 ? req.minBookingAdvanceMinutes() : 30,
-                    req.maxBookingHorizonDays() != null && req.maxBookingHorizonDays() > 0 ? req.maxBookingHorizonDays() : 60,
-                    req.cancellationWindowHours() != null && req.cancellationWindowHours() > 0 ? req.cancellationWindowHours() : 2
+                    req.defaultReservationDurationMinutes() != null ? req.defaultReservationDurationMinutes() : 90,
+                    req.minBookingAdvanceMinutes() != null ? req.minBookingAdvanceMinutes() : 30,
+                    req.maxBookingHorizonDays() != null ? req.maxBookingHorizonDays() : 60,
+                    req.cancellationWindowHours() != null ? req.cancellationWindowHours() : 2
             );
             return ResponseEntity.status(HttpStatus.CREATED).body(entity);
         } catch (IllegalArgumentException e) {
@@ -84,7 +88,7 @@ public class RestaurantController {
             @ApiResponse(responseCode = "201", description = "Table created"),
             @ApiResponse(responseCode = "400", description = "Invalid table capacity")
     })
-    public ResponseEntity<?> addTable(@PathVariable UUID id, @RequestBody CreateTableRequest req) {
+    public ResponseEntity<?> addTable(@PathVariable UUID id, @Valid @RequestBody CreateTableRequest req) {
         try {
             RestaurantTableEntity table = restaurantService.addTable(id, req.tableNumber(), req.capacity() != null ? req.capacity() : 2);
             return ResponseEntity.status(HttpStatus.CREATED).body(table);
@@ -102,14 +106,14 @@ public class RestaurantController {
 
     @PostMapping("/{id}/table-combinations")
     @Operation(summary = "Define combinable tables", description = "Creates a combined table configuration from multiple existing tables.")
-    public ResponseEntity<TableCombinationEntity> addCombination(@PathVariable UUID id, @RequestBody CreateCombinationRequest req) {
+    public ResponseEntity<TableCombinationEntity> addCombination(@PathVariable UUID id, @Valid @RequestBody CreateCombinationRequest req) {
         TableCombinationEntity comb = restaurantService.addTableCombination(id, req.name(), req.tableIds());
         return ResponseEntity.status(HttpStatus.CREATED).body(comb);
     }
 
     @PutMapping("/{id}/opening-hours")
     @Operation(summary = "Configure opening hours schedule")
-    public ResponseEntity<?> configureOpeningHours(@PathVariable UUID id, @RequestBody OpeningHoursConfigDto dto) {
+    public ResponseEntity<?> configureOpeningHours(@PathVariable UUID id, @Valid @RequestBody OpeningHoursConfigDto dto) {
         List<OpeningHoursEntity> entities = dto.schedules().stream()
                 .map(s -> new OpeningHoursEntity(UUID.randomUUID(), id, s.dayOfWeek(), s.specificDate(), s.openTime(), s.closeTime(), s.isClosed()))
                 .toList();
@@ -123,11 +127,92 @@ public class RestaurantController {
         return ResponseEntity.ok(restaurantService.getOpeningHours(id));
     }
 
-    public record CreateRestaurantRequest(String name, String address, String timezone,
-                                          Integer defaultReservationDurationMinutes, Integer minBookingAdvanceMinutes,
-                                          Integer maxBookingHorizonDays, Integer cancellationWindowHours) {}
-    public record CreateTableRequest(String tableNumber, Integer capacity) {}
-    public record CreateCombinationRequest(String name, List<UUID> tableIds) {}
-    public record OpeningHoursConfigDto(List<ScheduleItemDto> schedules) {}
-    public record ScheduleItemDto(Integer dayOfWeek, LocalDate specificDate, LocalTime openTime, LocalTime closeTime, boolean isClosed) {}
+    public record CreateRestaurantRequest(
+            @NotBlank @Size(max = 150)
+            @Schema(description = "Restaurant trade name", example = "The Bistro", maxLength = 150)
+            String name,
+
+            @NotBlank @Size(max = 1000)
+            @Schema(description = "Physical address", example = "123 Main St, Amsterdam", maxLength = 1000)
+            String address,
+
+            @NotBlank @Size(max = 50)
+            @Schema(description = "IANA Timezone identifier", example = "Europe/Amsterdam", maxLength = 50)
+            String timezone,
+
+            @Min(15) @Max(480)
+            @Schema(description = "Default reservation duration in minutes (15-480)", example = "90", minimum = "15", maximum = "480", defaultValue = "90")
+            Integer defaultReservationDurationMinutes,
+
+            @Min(0) @Max(10080)
+            @Schema(description = "Minimum booking advance lead time in minutes (0-10080)", example = "30", minimum = "0", maximum = "10080", defaultValue = "30")
+            Integer minBookingAdvanceMinutes,
+
+            @Min(1) @Max(365)
+            @Schema(description = "Maximum forward booking horizon in days (1-365)", example = "60", minimum = "1", maximum = "365", defaultValue = "60")
+            Integer maxBookingHorizonDays,
+
+            @Min(0) @Max(168)
+            @Schema(description = "Authoritative cancellation window notice in hours (0-168)", example = "2", minimum = "0", maximum = "168", defaultValue = "2")
+            Integer cancellationWindowHours
+    ) {}
+
+    public record CreateTableRequest(
+            @NotBlank @Size(max = 50)
+            @Schema(description = "Table identifier or number", example = "T1", maxLength = 50)
+            String tableNumber,
+
+            @NotNull @Min(1) @Max(50)
+            @Schema(description = "Physical seating capacity (1-50)", example = "4", minimum = "1", maximum = "50")
+            Integer capacity
+    ) {}
+
+    public record CreateCombinationRequest(
+            @NotBlank @Size(max = 100)
+            @Schema(description = "Table combination identifier", example = "Party Hall 1", maxLength = 100)
+            String name,
+
+            @NotEmpty @Size(min = 2, max = 10)
+            @Schema(description = "Distinct table IDs composing the combination (min 2, max 10)")
+            List<UUID> tableIds
+    ) {
+        @AssertTrue(message = "Table combination must contain at least 2 distinct table identifiers")
+        public boolean isTableIds() {
+            return tableIds != null && tableIds.stream().distinct().count() == tableIds.size();
+        }
+    }
+
+    public record OpeningHoursConfigDto(
+            @NotEmpty
+            @Schema(description = "List of opening schedule items")
+            List<@Valid ScheduleItemDto> schedules
+    ) {}
+
+    public record ScheduleItemDto(
+            @Min(1) @Max(7)
+            @Schema(description = "Day of week (1 = Monday, 7 = Sunday)", minimum = "1", maximum = "7")
+            Integer dayOfWeek,
+
+            @Schema(description = "Specific calendar date for holiday/exception schedules")
+            LocalDate specificDate,
+
+            @NotNull
+            @Schema(description = "Daily opening time", example = "09:00:00")
+            LocalTime openTime,
+
+            @NotNull
+            @Schema(description = "Daily closing time", example = "22:00:00")
+            LocalTime closeTime,
+
+            @Schema(description = "Whether the establishment is closed on this schedule day")
+            boolean isClosed
+    ) {
+        @AssertTrue(message = "Close time must be strictly after open time for non-closed days")
+        public boolean isCloseTime() {
+            if (isClosed) {
+                return true;
+            }
+            return openTime != null && closeTime != null && closeTime.isAfter(openTime);
+        }
+    }
 }

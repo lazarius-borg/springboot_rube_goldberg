@@ -3,14 +3,19 @@ package nl.invokedynamic.demo.availability.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.availability.domain.*;
 import nl.invokedynamic.demo.availability.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class AvailabilityService {
+
+    private static final Logger log = LoggerFactory.getLogger(AvailabilityService.class);
 
     private final RestaurantViewRepository restaurantRepository;
     private final TableInventoryViewRepository tableRepository;
@@ -56,32 +61,15 @@ public class AvailabilityService {
                 restaurantId, endTime, startTime
         );
 
-        Set<UUID> occupiedTableIds = new HashSet<>();
-        for (SlotOccupancyViewEntity occ : occupancies) {
-            occupiedTableIds.add(occ.getTableId());
-        }
+        Set<UUID> occupiedTableIds = occupancies.stream()
+                .map(SlotOccupancyViewEntity::getTableId)
+                .collect(Collectors.toSet());
 
-        boolean available = false;
-        // Check single tables
-        for (TableInventoryViewEntity t : tables) {
-            if (!occupiedTableIds.contains(t.getId()) && t.getCapacity() >= partySize) {
-                available = true;
-                break;
-            }
-        }
-
-        // Check combinations if single table not found
-        if (!available) {
-            for (TableCombinationViewEntity c : combinations) {
-                if (c.getCombinedCapacity() >= partySize) {
-                    boolean combFree = c.getTableIds().stream().noneMatch(occupiedTableIds::contains);
-                    if (combFree) {
-                        available = true;
-                        break;
-                    }
-                }
-            }
-        }
+        boolean available = tables.stream()
+                .anyMatch(t -> !occupiedTableIds.contains(t.getId()) && t.getCapacity() >= partySize)
+                || combinations.stream()
+                .filter(c -> c.getCombinedCapacity() >= partySize)
+                .anyMatch(c -> c.getTableIds().stream().noneMatch(occupiedTableIds::contains));
 
         List<String> suggestedSlots = new ArrayList<>();
         if (available) {
@@ -89,6 +77,8 @@ public class AvailabilityService {
         }
 
         AvailabilityResult result = new AvailabilityResult(restaurantId, requestedZoned.toString(), partySize, available, suggestedSlots);
+        log.info("Checked availability for restaurant {} date {} time {} partySize {}: available={}",
+                restaurantId, date, time, partySize, available);
 
         try {
             redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(result), 60, TimeUnit.SECONDS);
@@ -98,6 +88,7 @@ public class AvailabilityService {
     }
 
     public void invalidateCache(UUID restaurantId) {
+        log.info("Invalidating availability cache for restaurant {}", restaurantId);
         try {
             Set<String> keys = redisTemplate.keys(String.format("availability:%s:*", restaurantId));
             if (keys != null && !keys.isEmpty()) {
