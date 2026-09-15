@@ -137,6 +137,9 @@ services:
       - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
     ports:
       - "5601:5601"
+    volumes:
+      - ./opensearch-dashboards:/usr/share/opensearch-dashboards/provisioning:ro
+    entrypoint: ["/bin/sh", "/usr/share/opensearch-dashboards/provisioning/entrypoint-wrapper.sh"]
     depends_on:
       - opensearch
 

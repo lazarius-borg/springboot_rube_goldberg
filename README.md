@@ -695,11 +695,19 @@ curl -s -X POST "http://localhost:9200/ss4o_traces-*/_search" \
 
 ---
 
-### 🖥️ OpenSearch Dashboards (Visual Exploration)
+### 🖥️ OpenSearch Dashboards (Automated Provisioning & Visual Exploration)
 
-OpenSearch Dashboards is accessible at **`http://localhost:5601`**:
-1. **Log Discovery**: Navigate to **Management** &rarr; **Index Patterns** &rarr; Create Index Pattern `otel-logs*` (time field: `timestamp`). View real-time log streams with search filters for `serviceName`, `severity`, and `traceId`.
-2. **Trace Analytics**: Navigate to **Trace Analytics** to visualize end-to-end service dependency maps, latency percentiles (p50, p95, p99), and span waterfall timelines.
-3. **Grafana Dashboards**: Access pre-provisioned operational metrics at `http://localhost:3000` (Admin: `admin` / `admin`).
-4. **Prometheus Metrics**: Query raw scraped metrics at `http://localhost:9090`.
-5. **Alertmanager Rules**: Defined in `infrastructure/prometheus/alert-rules.yml` for automated error rate and downtime alerts.
+OpenSearch Dashboards is accessible at **`http://localhost:5601`**. All dashboards, index patterns, and visualizations are **automatically provisioned** on container startup with zero manual configuration required:
+
+1. **Default Landing Experience**: Navigating to `http://localhost:5601` immediately routes directly to the **Application Logs Dashboard** with a pre-configured 15-minute rolling window and 10-second auto-refresh for live-tail log monitoring.
+2. **Pre-Provisioned Observability Dashboards**:
+   - **Platform Observability Overview**: High-level platform health, log volume trends, trace throughput, severity breakdowns, and error status distributions.
+   - **Application Logs Dashboard**: Deep microservice log exploration, severity breakdown donut, logs by service chart, and an interactive log stream table with expandable JSON details.
+   - **Distributed Traces Dashboard**: Trace span volume over time, operation status breakdown (OK vs ERROR), span latency distribution (ms), and recent trace spans table.
+3. **Pre-Configured Index Patterns**:
+   - `otel-logs*` (time field: `timestamp`)
+   - `ss4o_traces-*` (time field: `startTime`)
+4. **Grafana Dashboards**: Access pre-provisioned operational metrics at `http://localhost:3000` (Admin: `admin` / `admin`).
+5. **Prometheus Metrics**: Query raw scraped metrics at `http://localhost:9090`.
+6. **Alertmanager Rules**: Defined in `infrastructure/prometheus/alert-rules.yml` for automated error rate and downtime alerts.
+
