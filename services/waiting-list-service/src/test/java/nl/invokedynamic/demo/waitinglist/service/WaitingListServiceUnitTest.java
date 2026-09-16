@@ -168,4 +168,26 @@ class WaitingListServiceUnitTest {
         )).isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("Seating time window has already passed");
     }
+
+    @Test
+    void shouldQueryWaitingListWithVariousFilterCombinations() {
+        UUID restId = UUID.randomUUID();
+        LocalDate date = LocalDate.of(2026, 9, 20);
+
+        // 1. All filters
+        service.getWaitingList(restId, date, "WAITING");
+        verify(entryRepository).findByRestaurantIdAndTargetDateAndStatusOrderByCreatedAtAsc(restId, date, "WAITING");
+
+        // 2. Date only
+        service.getWaitingList(restId, date, null);
+        verify(entryRepository).findByRestaurantIdAndTargetDateOrderByCreatedAtAsc(restId, date);
+
+        // 3. Status only
+        service.getWaitingList(restId, null, "WAITING");
+        verify(entryRepository).findByRestaurantIdAndStatusOrderByCreatedAtAsc(restId, "WAITING");
+
+        // 4. Restaurant ID only
+        service.getWaitingList(restId, null, null);
+        verify(entryRepository).findByRestaurantIdOrderByCreatedAtAsc(restId);
+    }
 }

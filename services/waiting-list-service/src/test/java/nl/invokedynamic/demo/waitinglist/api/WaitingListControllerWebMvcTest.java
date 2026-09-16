@@ -14,11 +14,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -71,5 +74,28 @@ class WaitingListControllerWebMvcTest {
         mockMvc.perform(post("/api/v1/waiting-list/offers/" + offerId + "/accept"))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.detail").value("Offer has expired"));
+    }
+
+    @Test
+    void shouldGetWaitingListEntries() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        LocalDate targetDate = LocalDate.now().plusDays(2);
+        WaitingListEntryEntity entry = new WaitingListEntryEntity(
+                entryId, restId, UUID.randomUUID(), "manager-check@example.com",
+                targetDate, LocalTime.of(19, 0), LocalTime.of(21, 0), 2, "WAITING", Instant.now()
+        );
+
+        when(waitingListService.getWaitingList(eq(restId), any(), any()))
+                .thenReturn(List.of(entry));
+
+        mockMvc.perform(get("/api/v1/waiting-list")
+                .param("restaurantId", restId.toString())
+                .param("targetDate", targetDate.toString())
+                .param("status", "WAITING"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(entryId.toString()))
+                .andExpect(jsonPath("$[0].customerEmail").value("manager-check@example.com"))
+                .andExpect(jsonPath("$[0].status").value("WAITING"));
     }
 }

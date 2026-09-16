@@ -90,6 +90,19 @@ public class WaitingListService {
         return entry;
     }
 
+    @Transactional(readOnly = true)
+    public List<WaitingListEntryEntity> getWaitingList(UUID restaurantId, LocalDate targetDate, String status) {
+        if (targetDate != null && status != null && !status.isBlank()) {
+            return entryRepository.findByRestaurantIdAndTargetDateAndStatusOrderByCreatedAtAsc(restaurantId, targetDate, status);
+        } else if (targetDate != null) {
+            return entryRepository.findByRestaurantIdAndTargetDateOrderByCreatedAtAsc(restaurantId, targetDate);
+        } else if (status != null && !status.isBlank()) {
+            return entryRepository.findByRestaurantIdAndStatusOrderByCreatedAtAsc(restaurantId, status);
+        } else {
+            return entryRepository.findByRestaurantIdOrderByCreatedAtAsc(restaurantId);
+        }
+    }
+
     @Transactional
     public void processCancellationOpening(UUID restaurantId, Instant cancelledStart, int partySize, List<UUID> releasedTableIds) {
         LocalDate date = cancelledStart.atZone(ZoneOffset.UTC).toLocalDate();

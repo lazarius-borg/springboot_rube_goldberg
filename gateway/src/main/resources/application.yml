@@ -18,37 +18,64 @@ spring:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/rube-goldberg}
   cloud:
     gateway:
+      server:
+        webflux:
+          routes:
+            - id: customer-service
+              uri: ${CUSTOMER_SERVICE_URI:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/customers, /api/v1/customers/**
+            - id: restaurant-service
+              uri: ${RESTAURANT_SERVICE_URI:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/restaurants, /api/v1/restaurants/**
+            - id: availability-service
+              uri: ${AVAILABILITY_SERVICE_URI:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/availability, /api/v1/availability/**
+            - id: reservation-service
+              uri: ${RESERVATION_SERVICE_URI:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/reservations, /api/v1/reservations/**
+            - id: waiting-list-service
+              uri: ${WAITING_LIST_SERVICE_URI:http://localhost:8086}
+              predicates:
+                - Path=/api/v1/waiting-list, /api/v1/waiting-list/**
+            - id: analytics-service
+              uri: ${ANALYTICS_SERVICE_URI:http://localhost:8087}
+              predicates:
+                - Path=/api/v1/analytics, /api/v1/analytics/**
       routes:
         - id: customer-service
           uri: ${CUSTOMER_SERVICE_URI:http://localhost:8082}
           predicates:
-            - Path=/api/v1/customers/**
+            - Path=/api/v1/customers, /api/v1/customers/**
         - id: restaurant-service
           uri: ${RESTAURANT_SERVICE_URI:http://localhost:8083}
           predicates:
-            - Path=/api/v1/restaurants/**
+            - Path=/api/v1/restaurants, /api/v1/restaurants/**
         - id: availability-service
           uri: ${AVAILABILITY_SERVICE_URI:http://localhost:8084}
           predicates:
-            - Path=/api/v1/availability/**
+            - Path=/api/v1/availability, /api/v1/availability/**
         - id: reservation-service
           uri: ${RESERVATION_SERVICE_URI:http://localhost:8085}
           predicates:
-            - Path=/api/v1/reservations/**
+            - Path=/api/v1/reservations, /api/v1/reservations/**
         - id: waiting-list-service
           uri: ${WAITING_LIST_SERVICE_URI:http://localhost:8086}
           predicates:
-            - Path=/api/v1/waiting-list/**
+            - Path=/api/v1/waiting-list, /api/v1/waiting-list/**
         - id: analytics-service
           uri: ${ANALYTICS_SERVICE_URI:http://localhost:8087}
           predicates:
-            - Path=/api/v1/analytics/**
+            - Path=/api/v1/analytics, /api/v1/analytics/**
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info,metrics,prometheus,gateway
   endpoint:
     health:
       probes:

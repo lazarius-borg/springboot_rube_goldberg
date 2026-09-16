@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +31,17 @@ public class WaitingListController {
 
     public WaitingListController(WaitingListService waitingListService) {
         this.waitingListService = waitingListService;
+    }
+
+    @GetMapping
+    @Operation(summary = "Get waiting list entries", description = "Manager inspection of fair FIFO queue for a restaurant.")
+    @ApiResponse(responseCode = "200", description = "Waiting list entries retrieved")
+    public ResponseEntity<List<WaitingListEntryEntity>> getWaitingList(
+            @Parameter(description = "Restaurant UUID") @RequestParam UUID restaurantId,
+            @Parameter(description = "Target dining date") @RequestParam(required = false) LocalDate targetDate,
+            @Parameter(description = "Entry status filter") @RequestParam(required = false) String status) {
+        List<WaitingListEntryEntity> entries = waitingListService.getWaitingList(restaurantId, targetDate, status);
+        return ResponseEntity.ok(entries);
     }
 
     @PostMapping

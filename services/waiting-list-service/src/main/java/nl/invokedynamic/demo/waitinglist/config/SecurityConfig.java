@@ -32,6 +32,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/waiting-list/**").hasAnyRole("RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/waiting-list/**").hasRole("CUSTOMER")
                         .anyRequest().authenticated()
                 )
