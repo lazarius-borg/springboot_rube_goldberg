@@ -36,9 +36,10 @@ class WaitingListControllerWebMvcTest {
     @Test
     void shouldJoinWaitingList() throws Exception {
         UUID id = UUID.randomUUID();
+        LocalDate futureDate = LocalDate.now().plusDays(5);
         WaitingListEntryEntity entry = new WaitingListEntryEntity(
                 id, UUID.randomUUID(), UUID.randomUUID(), "bob@example.com",
-                LocalDate.of(2026, 9, 1), LocalTime.of(18, 0), LocalTime.of(21, 0), 4, "WAITING", Instant.now()
+                futureDate, LocalTime.of(18, 0), LocalTime.of(21, 0), 4, "WAITING", Instant.now()
         );
 
         when(waitingListService.joinWaitingList(any(), any(), any(), any(), any(), any(), anyInt()))
@@ -46,16 +47,16 @@ class WaitingListControllerWebMvcTest {
 
         mockMvc.perform(post("/api/v1/waiting-list")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(String.format("""
                     {
                       "restaurantId": "00000000-0000-0000-0000-000000000001",
                       "customerEmail": "bob@example.com",
-                      "targetDate": "2026-09-01",
+                      "targetDate": "%s",
                       "earliestTime": "18:00:00",
                       "latestTime": "21:00:00",
                       "partySize": 4
                     }
-                """))
+                """, futureDate)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(id.toString()))
                 .andExpect(jsonPath("$.customerEmail").value("bob@example.com"));

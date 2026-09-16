@@ -23,33 +23,61 @@ public class WaitingListService {
     private final OutboxEventRepository outboxRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
+    private static final ZoneId DEFAULT_ZONE = ZoneId.of("Europe/Amsterdam");
 
     public WaitingListService(WaitingListEntryRepository entryRepository,
                               WaitingListOfferRepository offerRepository,
                               OutboxEventRepository outboxRepository,
                               KafkaTemplate<String, Object> kafkaTemplate,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              Clock clock) {
         this.entryRepository = entryRepository;
         this.offerRepository = offerRepository;
         this.outboxRepository = outboxRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     @Transactional
     public WaitingListEntryEntity joinWaitingList(UUID restaurantId, UUID customerId, String customerEmail,
                                                   LocalDate targetDate, LocalTime earliestTime, LocalTime latestTime,
                                                   int partySize) {
+        ZonedDateTime nowInZone = ZonedDateTime.now(clock.withZone(DEFAULT_ZONE));
+        LocalDate today = nowInZone.toLocalDate();
+
+        if (targetDate.isBefore(today)) {
+            throw new IllegalArgumentException("Target date must not be in the past");
+        }
+        if (targetDate.isAfter(today.plusDays(365))) {
+            throw new IllegalArgumentException("Target date cannot be more than 365 days in advance");
+        }
+
+        LocalTime effectiveEarliest = earliestTime;
+        if (targetDate.isEqual(today)) {
+            LocalTime nowTime = nowInZone.toLocalTime();
+            if (latestTime.isBefore(nowTime)) {
+                throw new IllegalArgumentException("Seating time window has already passed");
+            }
+            if (earliestTime.isBefore(nowTime.minusMinutes(5))) {
+                throw new IllegalArgumentException("Earliest seating time cannot be in the past");
+            }
+            if (earliestTime.isBefore(nowTime)) {
+                effectiveEarliest = nowTime;
+            }
+        }
+
         UUID entryId = UUID.randomUUID();
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         WaitingListEntryEntity entry = new WaitingListEntryEntity(
-                entryId, restaurantId, customerId, customerEmail, targetDate, earliestTime, latestTime, partySize, "WAITING", now
+                entryId, restaurantId, customerId, customerEmail, targetDate, effectiveEarliest, latestTime, partySize, "WAITING", now
         );
         entryRepository.save(entry);
 
         try {
             WaitingListEntryCreatedEvent event = new WaitingListEntryCreatedEvent(
-                    UUID.randomUUID(), now, entryId, restaurantId, customerId, customerEmail, targetDate, earliestTime, latestTime, partySize
+                    UUID.randomUUID(), now, entryId, restaurantId, customerId, customerEmail, targetDate, effectiveEarliest, latestTime, partySize
             );
             outboxRepository.save(new OutboxEventEntity(
                     UUID.randomUUID(), "WaitingListEntry", entryId.toString(), "WaitingListEntryCreated",

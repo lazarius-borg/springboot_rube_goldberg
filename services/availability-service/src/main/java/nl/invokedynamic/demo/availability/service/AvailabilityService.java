@@ -23,22 +23,49 @@ public class AvailabilityService {
     private final SlotOccupancyViewRepository occupancyRepository;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
+    private final RestaurantTimezoneResolver timezoneResolver;
 
     public AvailabilityService(RestaurantViewRepository restaurantRepository,
                                TableInventoryViewRepository tableRepository,
                                TableCombinationViewRepository combinationRepository,
                                SlotOccupancyViewRepository occupancyRepository,
                                StringRedisTemplate redisTemplate,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               Clock clock,
+                               RestaurantTimezoneResolver timezoneResolver) {
         this.restaurantRepository = restaurantRepository;
         this.tableRepository = tableRepository;
         this.combinationRepository = combinationRepository;
         this.occupancyRepository = occupancyRepository;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.clock = clock;
+        this.timezoneResolver = timezoneResolver;
     }
 
     public AvailabilityResult checkAvailability(UUID restaurantId, LocalDate date, LocalTime time, int partySize) {
+        RestaurantViewEntity restaurant = restaurantRepository.findById(restaurantId)
+                .orElseThrow(() -> new IllegalArgumentException("Restaurant not found: " + restaurantId));
+
+        ZoneId zone = timezoneResolver.resolveZoneId(restaurant);
+        ZonedDateTime requestedZoned = ZonedDateTime.of(date, time, zone);
+
+        // Role-based temporal validation
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean isManagerOrAdmin = auth != null && auth.getAuthorities() != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_RESTAURANT_MANAGER") || a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isManagerOrAdmin) {
+            ZonedDateTime nowInZone = ZonedDateTime.now(clock.withZone(zone));
+            if (requestedZoned.isBefore(nowInZone.minusMinutes(5))) {
+                throw new IllegalArgumentException("Dining time cannot be in the past");
+            }
+            if (requestedZoned.isAfter(nowInZone.plusDays(365))) {
+                throw new IllegalArgumentException("Dining date cannot be more than 365 days in advance");
+            }
+        }
+
         String cacheKey = String.format("availability:%s:%s:%s:%d", restaurantId, date, time, partySize);
         try {
             String cached = redisTemplate.opsForValue().get(cacheKey);
@@ -47,11 +74,6 @@ public class AvailabilityService {
             }
         } catch (Exception ignored) {}
 
-        RestaurantViewEntity restaurant = restaurantRepository.findById(restaurantId)
-                .orElseThrow(() -> new IllegalArgumentException("Restaurant not found: " + restaurantId));
-
-        ZoneId zone = ZoneId.of(restaurant.getTimezone());
-        ZonedDateTime requestedZoned = ZonedDateTime.of(date, time, zone);
         Instant startTime = requestedZoned.toInstant();
         Instant endTime = startTime.plus(Duration.ofMinutes(restaurant.getDefaultReservationDurationMinutes()));
 

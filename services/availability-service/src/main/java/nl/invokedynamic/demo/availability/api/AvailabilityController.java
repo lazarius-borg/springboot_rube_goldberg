@@ -45,10 +45,17 @@ public class AvailabilityController {
         try {
             return ResponseEntity.ok(availabilityService.checkAvailability(query.restaurantId(), query.date(), query.time(), partySize));
         } catch (IllegalArgumentException e) {
-            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
-            pd.setType(URI.create("https://example.invalid/problems/not-found"));
-            pd.setTitle("Resource Not Found");
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+            String msg = e.getMessage() != null ? e.getMessage() : "Invalid argument";
+            boolean isNotFound = msg.toLowerCase().contains("not found");
+            HttpStatus status = isNotFound ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, msg);
+            pd.setType(URI.create(isNotFound ? "https://example.invalid/problems/not-found" : "https://example.invalid/problems/validation-error"));
+            pd.setTitle(isNotFound ? "Resource Not Found" : "Validation Failed");
+            if (!isNotFound) {
+                String paramName = msg.toLowerCase().contains("date") ? "date" : "time";
+                pd.setProperty("invalidParams", java.util.List.of(java.util.Map.of("name", paramName, "reason", msg)));
+            }
+            return ResponseEntity.status(status).body(pd);
         }
     }
 

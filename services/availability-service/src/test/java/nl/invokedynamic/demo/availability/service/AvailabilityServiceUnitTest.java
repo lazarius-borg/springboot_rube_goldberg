@@ -39,9 +39,14 @@ class AvailabilityServiceUnitTest {
     @BeforeEach
     void setUp() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        java.time.Clock fixedClock = java.time.Clock.fixed(
+                Instant.parse("2026-09-01T12:00:00Z"),
+                java.time.ZoneOffset.UTC
+        );
         service = new AvailabilityService(
                 restaurantRepository, tableRepository, combinationRepository,
-                occupancyRepository, redisTemplate, objectMapper
+                occupancyRepository, redisTemplate, objectMapper,
+                fixedClock, new RestaurantTimezoneResolver()
         );
     }
 

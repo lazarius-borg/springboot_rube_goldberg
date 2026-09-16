@@ -19,6 +19,7 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -138,5 +139,48 @@ class WaitingListValidationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Validation Failed"))
                 .andExpect(jsonPath("$.invalidParams[0].name").value("earliestTime"));
+    }
+
+    @Test
+    void shouldRejectTargetDateBeyondHorizon() throws Exception {
+        mockMvc.perform(post("/api/v1/waiting-list")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "restaurantId": "00000000-0000-0000-0000-000000000001",
+                        "customerEmail": "valid@example.com",
+                        "targetDate": "%s",
+                        "earliestTime": "18:00:00",
+                        "latestTime": "21:00:00",
+                        "partySize": 2
+                    }
+                """.formatted(LocalDate.now().plusDays(370))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.invalidParams[0].name").value("targetDateWithinHorizon"));
+    }
+
+    @Test
+    void shouldRejectSameDayElapsedWindowFromService() throws Exception {
+        LocalDate today = LocalDate.now();
+        when(waitingListService.joinWaitingList(any(), any(), any(), eq(today), any(), any(), anyInt()))
+                .thenThrow(new IllegalArgumentException("Seating time window has already passed"));
+
+        mockMvc.perform(post("/api/v1/waiting-list")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                        "restaurantId": "00000000-0000-0000-0000-000000000001",
+                        "customerEmail": "valid@example.com",
+                        "targetDate": "%s",
+                        "earliestTime": "10:00:00",
+                        "latestTime": "11:00:00",
+                        "partySize": 2
+                    }
+                """.formatted(today)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.invalidParams[0].name").value("latestTime"))
+                .andExpect(jsonPath("$.invalidParams[0].reason").value("Seating time window has already passed"));
     }
 }

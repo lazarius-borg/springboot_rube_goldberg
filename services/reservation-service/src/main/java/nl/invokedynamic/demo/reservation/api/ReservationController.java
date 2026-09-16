@@ -38,9 +38,11 @@ import java.util.UUID;
 public class ReservationController {
 
     private final ReservationService reservationService;
+    private final java.time.Clock clock;
 
-    public ReservationController(ReservationService reservationService) {
+    public ReservationController(ReservationService reservationService, java.time.Clock clock) {
         this.reservationService = reservationService;
+        this.clock = clock;
     }
 
     @PostMapping
@@ -53,16 +55,14 @@ public class ReservationController {
     public ResponseEntity<?> createReservation(@Valid @RequestBody CreateReservationRequest req) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            boolean isCustomer = auth != null && auth.getAuthorities() != null && auth.getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
             boolean isManagerOrAdmin = auth != null && auth.getAuthorities() != null && auth.getAuthorities().stream()
                     .anyMatch(a -> a.getAuthority().equals("ROLE_RESTAURANT_MANAGER") || a.getAuthority().equals("ROLE_ADMIN"));
 
-            Instant now = Instant.now();
+            Instant now = clock.instant();
             Instant startTime = req.startTime() != null ? req.startTime() : now;
 
-            if (isCustomer && !isManagerOrAdmin) {
-                // Customer booking: enforce current/future with 5-minute clock-skew grace period and max 365 days
+            if (!isManagerOrAdmin) {
+                // Customer or unauthenticated: enforce current/future with 5-minute clock-skew grace period and max 365 days
                 if (startTime.isBefore(now.minusSeconds(300))) {
                     throw new IllegalArgumentException("Reservation start time cannot be in the past");
                 }

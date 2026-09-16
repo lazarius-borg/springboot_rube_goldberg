@@ -28,7 +28,11 @@ class ReservationControllerWebMvcTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservationService)).build();
+        java.time.Clock fixedClock = java.time.Clock.fixed(
+                Instant.parse("2026-09-01T12:00:00Z"),
+                java.time.ZoneOffset.UTC
+        );
+        mockMvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservationService, fixedClock)).build();
     }
 
     @Test

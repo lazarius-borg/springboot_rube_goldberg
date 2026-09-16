@@ -34,10 +34,14 @@ class WaitingListServiceUnitTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     private WaitingListService service;
+    private final Clock fixedClock = Clock.fixed(
+            Instant.parse("2026-09-01T12:00:00Z"),
+            ZoneOffset.UTC
+    );
 
     @BeforeEach
     void setUp() {
-        service = new WaitingListService(entryRepository, offerRepository, outboxRepository, kafkaTemplate, objectMapper);
+        service = new WaitingListService(entryRepository, offerRepository, outboxRepository, kafkaTemplate, objectMapper, fixedClock);
     }
 
     @Test
@@ -114,5 +118,54 @@ class WaitingListServiceUnitTest {
         assertThatThrownBy(() -> service.acceptOffer(offerId))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Offer has expired");
+    }
+
+    @Test
+    void shouldClampEarliestTimeToNowWhenWithinGraceWindowOnSameDay() {
+        UUID restId = UUID.randomUUID();
+        UUID custId = UUID.randomUUID();
+        // Fixed clock is 2026-09-01T12:00:00Z -> In Europe/Amsterdam (UTC+2 in Sep DST), local time is 14:00:00
+        // 13:57:00 is 3 minutes in past -> within 5 minute grace period
+        LocalDate today = LocalDate.of(2026, 9, 1);
+        LocalTime requestedEarliest = LocalTime.of(13, 57, 0);
+        LocalTime latest = LocalTime.of(16, 0, 0);
+
+        WaitingListEntryEntity entry = service.joinWaitingList(
+                restId, custId, "alice@example.com", today, requestedEarliest, latest, 2
+        );
+
+        assertThat(entry).isNotNull();
+        assertThat(entry.getEarliestTime()).isEqualTo(LocalTime.of(14, 0, 0)); // Clamped to now
+        assertThat(entry.getLatestTime()).isEqualTo(latest);
+    }
+
+    @Test
+    void shouldRejectSameDayWhenEarliestTimePastGraceWindow() {
+        UUID restId = UUID.randomUUID();
+        UUID custId = UUID.randomUUID();
+        // 13:50:00 is 10 minutes in past -> beyond 5 minute grace window
+        LocalDate today = LocalDate.of(2026, 9, 1);
+        LocalTime requestedEarliest = LocalTime.of(13, 50, 0);
+        LocalTime latest = LocalTime.of(16, 0, 0);
+
+        assertThatThrownBy(() -> service.joinWaitingList(
+                restId, custId, "alice@example.com", today, requestedEarliest, latest, 2
+        )).isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("Earliest seating time cannot be in the past");
+    }
+
+    @Test
+    void shouldRejectSameDayWhenLatestTimeInThePast() {
+        UUID restId = UUID.randomUUID();
+        UUID custId = UUID.randomUUID();
+        // 13:30:00 and 13:45:00 -> latest time is before 14:00
+        LocalDate today = LocalDate.of(2026, 9, 1);
+        LocalTime requestedEarliest = LocalTime.of(13, 30, 0);
+        LocalTime latest = LocalTime.of(13, 45, 0);
+
+        assertThatThrownBy(() -> service.joinWaitingList(
+                restId, custId, "alice@example.com", today, requestedEarliest, latest, 2
+        )).isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("Seating time window has already passed");
     }
 }

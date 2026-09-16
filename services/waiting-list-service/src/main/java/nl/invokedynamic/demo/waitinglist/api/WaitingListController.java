@@ -95,10 +95,17 @@ public class WaitingListController {
             if (targetDate == null) {
                 return false;
             }
-            // Allow tests using baseline fixed future dates like 2026-09-01
-            LocalDate baseline = LocalDate.of(2026, 9, 1);
-            LocalDate reference = LocalDate.now().isBefore(baseline) ? LocalDate.now() : baseline;
-            return !targetDate.isBefore(reference);
+            LocalDate today = LocalDate.now(java.time.ZoneId.of("Europe/Amsterdam"));
+            return !targetDate.isBefore(today);
+        }
+
+        @AssertTrue(message = "Target date cannot be more than 365 days in advance")
+        public boolean isTargetDateWithinHorizon() {
+            if (targetDate == null) {
+                return false;
+            }
+            LocalDate today = LocalDate.now(java.time.ZoneId.of("Europe/Amsterdam"));
+            return !targetDate.isAfter(today.plusDays(365));
         }
 
         @AssertTrue(message = "Earliest time must be before or equal to latest time")
