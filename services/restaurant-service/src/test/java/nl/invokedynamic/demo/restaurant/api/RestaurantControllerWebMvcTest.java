@@ -1,7 +1,9 @@
 package nl.invokedynamic.demo.restaurant.api;
 
+import nl.invokedynamic.demo.restaurant.api.dto.UpdateRestaurantSettingsRequest;
 import nl.invokedynamic.demo.restaurant.domain.RestaurantEntity;
 import nl.invokedynamic.demo.restaurant.domain.RestaurantTableEntity;
+import nl.invokedynamic.demo.restaurant.domain.TableCombinationEntity;
 import nl.invokedynamic.demo.restaurant.service.RestaurantService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,12 +15,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -37,9 +42,9 @@ class RestaurantControllerWebMvcTest {
     void shouldCreateRestaurantSuccessfully() throws Exception {
         UUID id = UUID.randomUUID();
         RestaurantEntity entity = new RestaurantEntity(
-                id, "The Bistro", "Amsterdam", "Europe/Amsterdam", 90, 30, 60, 2, "ACTIVE", Instant.now(), Instant.now()
+                id, "The Bistro", "Amsterdam", "Europe/Amsterdam", 90, 180, 30, 60, 2, "ACTIVE", Instant.now(), Instant.now()
         );
-        when(restaurantService.createRestaurant(anyString(), anyString(), anyString(), anyInt(), anyInt(), anyInt(), anyInt()))
+        when(restaurantService.createRestaurant(anyString(), anyString(), anyString(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt()))
                 .thenReturn(entity);
 
         mockMvc.perform(post("/api/v1/restaurants")
@@ -50,6 +55,7 @@ class RestaurantControllerWebMvcTest {
                       "address": "Amsterdam",
                       "timezone": "Europe/Amsterdam",
                       "defaultReservationDurationMinutes": 90,
+                      "maxReservationDurationMinutes": 180,
                       "minBookingAdvanceMinutes": 30,
                       "maxBookingHorizonDays": 60,
                       "cancellationWindowHours": 2
@@ -62,7 +68,7 @@ class RestaurantControllerWebMvcTest {
 
     @Test
     void shouldReturnProblemDetailOnInvalidTimezone() throws Exception {
-        when(restaurantService.createRestaurant(anyString(), anyString(), anyString(), anyInt(), anyInt(), anyInt(), anyInt()))
+        when(restaurantService.createRestaurant(anyString(), anyString(), anyString(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt()))
                 .thenThrow(new IllegalArgumentException("Invalid IANA timezone: Bad/Zone"));
 
         mockMvc.perform(post("/api/v1/restaurants")
@@ -92,8 +98,8 @@ class RestaurantControllerWebMvcTest {
     @Test
     void shouldAddTableSuccessfully() throws Exception {
         UUID restId = UUID.randomUUID();
-        RestaurantTableEntity table = new RestaurantTableEntity(UUID.randomUUID(), restId, "T1", 4, "ACTIVE", Instant.now());
-        when(restaurantService.addTable(restId, "T1", 4)).thenReturn(table);
+        RestaurantTableEntity table = new RestaurantTableEntity(UUID.randomUUID(), restId, "T1", 4, "Main Dining", "ACTIVE", Instant.now());
+        when(restaurantService.addTable(eq(restId), eq("T1"), eq(4), any())).thenReturn(table);
 
         mockMvc.perform(post("/api/v1/restaurants/" + restId + "/tables")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -103,5 +109,115 @@ class RestaurantControllerWebMvcTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.tableNumber").value("T1"))
                 .andExpect(jsonPath("$.capacity").value(4));
+    }
+
+    @Test
+    void shouldAddTableWithZoneSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        RestaurantTableEntity table = new RestaurantTableEntity(UUID.randomUUID(), restId, "R1", 2, "Rooftop", "ACTIVE", Instant.now());
+        when(restaurantService.addTable(restId, "R1", 2, "Rooftop")).thenReturn(table);
+
+        mockMvc.perform(post("/api/v1/restaurants/" + restId + "/tables")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    { "tableNumber": "R1", "capacity": 2, "zone": "Rooftop" }
+                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tableNumber").value("R1"))
+                .andExpect(jsonPath("$.zone").value("Rooftop"));
+    }
+
+    @Test
+    void shouldUpdateTableSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID tableId = UUID.randomUUID();
+        RestaurantTableEntity updatedTable = new RestaurantTableEntity(tableId, restId, "T1-Updated", 6, "Patio", "ACTIVE", Instant.now());
+        when(restaurantService.updateTable(restId, tableId, "T1-Updated", 6, "Patio")).thenReturn(updatedTable);
+
+        mockMvc.perform(put("/api/v1/restaurants/" + restId + "/tables/" + tableId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    { "tableNumber": "T1-Updated", "capacity": 6, "zone": "Patio" }
+                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tableNumber").value("T1-Updated"))
+                .andExpect(jsonPath("$.capacity").value(6))
+                .andExpect(jsonPath("$.zone").value("Patio"));
+    }
+
+    @Test
+    void shouldDeleteTableSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID tableId = UUID.randomUUID();
+        doNothing().when(restaurantService).deleteTable(restId, tableId);
+
+        mockMvc.perform(delete("/api/v1/restaurants/" + restId + "/tables/" + tableId))
+                .andExpect(status().isNoContent());
+
+        verify(restaurantService).deleteTable(restId, tableId);
+    }
+
+    @Test
+    void shouldReturnConflictWhenDeletingTableWithActiveReservations() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID tableId = UUID.randomUUID();
+        doThrow(new IllegalStateException("Table cannot be deleted because it is allocated to active upcoming reservations"))
+                .when(restaurantService).deleteTable(restId, tableId);
+
+        mockMvc.perform(delete("/api/v1/restaurants/" + restId + "/tables/" + tableId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("Table Allocation Conflict"))
+                .andExpect(jsonPath("$.detail").value("Table cannot be deleted because it is allocated to active upcoming reservations"));
+    }
+
+    @Test
+    void shouldAddTableCombinationSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID t1 = UUID.randomUUID();
+        UUID t2 = UUID.randomUUID();
+        TableCombinationEntity combo = new TableCombinationEntity(UUID.randomUUID(), restId, "Combo: T1 + T2", List.of(t1, t2), 8);
+        when(restaurantService.addTableCombination(eq(restId), any(), eq(List.of(t1, t2)), eq(8)))
+                .thenReturn(combo);
+
+        mockMvc.perform(post("/api/v1/restaurants/" + restId + "/table-combinations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(String.format("""
+                    {
+                      "tableIds": ["%s", "%s"],
+                      "combinedCapacity": 8
+                    }
+                """, t1, t2)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Combo: T1 + T2"))
+                .andExpect(jsonPath("$.combinedCapacity").value(8));
+    }
+
+    @Test
+    void shouldUpdateRestaurantSettingsSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        RestaurantEntity entity = new RestaurantEntity(
+                restId, "Updated Name", "New Address", "Europe/Amsterdam", 120, 240, 60, 90, 4, "ACTIVE", Instant.now(), Instant.now()
+        );
+        when(restaurantService.updateRestaurantSettings(eq(restId), any(UpdateRestaurantSettingsRequest.class)))
+                .thenReturn(entity);
+
+        mockMvc.perform(put("/api/v1/restaurants/" + restId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "name": "Updated Name",
+                      "address": "New Address",
+                      "timezone": "Europe/Amsterdam",
+                      "defaultReservationDurationMinutes": 120,
+                      "maxReservationDurationMinutes": 240,
+                      "minBookingAdvanceMinutes": 60,
+                      "maxBookingHorizonDays": 90,
+                      "cancellationWindowHours": 4
+                    }
+                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated Name"))
+                .andExpect(jsonPath("$.defaultReservationDurationMinutes").value(120))
+                .andExpect(jsonPath("$.maxReservationDurationMinutes").value(240));
     }
 }

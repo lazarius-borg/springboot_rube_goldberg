@@ -71,6 +71,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
       - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
+      - SERVICES_RESERVATION_SERVICE_URI=http://reservation-service:8085
     mem_limit: 512m
     depends_on:
       postgres:
@@ -98,6 +99,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
       - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
+      - SERVICES_RESTAURANT_SERVICE_URI=http://restaurant-service:8083
     mem_limit: 512m
     depends_on:
       postgres:
@@ -126,6 +128,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
       - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
+      - SERVICES_RESTAURANT_SERVICE_URI=http://restaurant-service:8083
     mem_limit: 512m
     depends_on:
       postgres:
@@ -152,6 +155,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
       - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
+      - SERVICES_RESTAURANT_SERVICE_URI=http://restaurant-service:8083
     mem_limit: 512m
     depends_on:
       postgres:

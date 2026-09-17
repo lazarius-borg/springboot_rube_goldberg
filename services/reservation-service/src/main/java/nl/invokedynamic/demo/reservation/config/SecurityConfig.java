@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -33,8 +34,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/reservations").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/reservations").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/reservations/*").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/reservations/**").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/reservations/*").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/reservations/*/status").hasAnyRole("RESTAURANT_MANAGER", "ADMIN")
                         .anyRequest().authenticated()
@@ -51,7 +51,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    @org.springframework.context.annotation.Profile("docker")
+    @Profile("docker")
     @ConditionalOnMissingBean(JwtDecoder.class)
     public JwtDecoder multiIssuerJwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:#{null}}") String jwkSetUri,
@@ -68,7 +68,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    @org.springframework.context.annotation.Profile("!docker")
+    @Profile("!docker")
     @ConditionalOnMissingBean(JwtDecoder.class)
     public JwtDecoder singleIssuerJwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:#{null}}") String jwkSetUri,

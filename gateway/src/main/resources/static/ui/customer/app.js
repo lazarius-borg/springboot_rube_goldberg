@@ -256,6 +256,7 @@ async function loadRestaurants() {
 
         if (restaurantsList.length > 0) {
             searchRestaurantSelect.selectedIndex = 1; // Default to first available restaurant
+            await updateDateTimeConstraints();
         }
     } catch (err) {
         console.error('Error loading restaurants:', err);
@@ -263,17 +264,240 @@ async function loadRestaurants() {
     }
 }
 
+// --- Helper Functions ---
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function getSelectedRestaurant() {
+    const restId = searchRestaurantSelect.value;
+    return restaurantMap.get(restId) || null;
+}
+
+function getRestaurantTimezone(restaurant) {
+    return (restaurant && restaurant.timezone) ? restaurant.timezone : 'Europe/Amsterdam';
+}
+
+function getMinBookingAdvanceMinutes(restaurant) {
+    return (restaurant && restaurant.minBookingAdvanceMinutes != null) ? restaurant.minBookingAdvanceMinutes : 30;
+}
+
+function getNowInTimezone(tz) {
+    try {
+        const now = new Date();
+        const dtfDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+        const dateStr = dtfDate.format(now);
+        const dtfTime = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+        const [hStr, mStr] = dtfTime.format(now).split(':');
+        return {
+            dateStr,
+            hours: parseInt(hStr, 10),
+            minutes: parseInt(mStr, 10)
+        };
+    } catch (e) {
+        const now = new Date();
+        return {
+            dateStr: now.toISOString().split('T')[0],
+            hours: now.getHours(),
+            minutes: now.getMinutes()
+        };
+    }
+}
+
+function getMinBookingThreshold(restaurant) {
+    const tz = getRestaurantTimezone(restaurant);
+    const advanceMinutes = getMinBookingAdvanceMinutes(restaurant);
+    const nowInfo = getNowInTimezone(tz);
+
+    const totalMinutes = nowInfo.hours * 60 + nowInfo.minutes + advanceMinutes;
+    const targetHours = Math.floor(totalMinutes / 60);
+    const targetMins = totalMinutes % 60;
+    const pad = n => String(n).padStart(2, '0');
+
+    return {
+        todayStr: nowInfo.dateStr,
+        advanceMinutes,
+        isNextDay: targetHours >= 24,
+        minTimeStr: `${pad(targetHours % 24)}:${pad(targetMins)}`
+    };
+}
+
+const restaurantHoursMap = new Map();
+
+async function getRestaurantHours(restaurantId) {
+    if (!restaurantId) return [];
+    if (restaurantHoursMap.has(restaurantId)) {
+        return restaurantHoursMap.get(restaurantId);
+    }
+    try {
+        const res = await authFetch(`/api/v1/restaurants/${restaurantId}/opening-hours`);
+        if (res.ok) {
+            const data = await res.json();
+            const list = Array.isArray(data) ? data : [];
+            restaurantHoursMap.set(restaurantId, list);
+            return list;
+        }
+    } catch (e) {
+        console.warn('Failed to load opening hours for restaurant', restaurantId, e);
+    }
+    return [];
+}
+
+function getScheduleForDate(hoursList, dateStr) {
+    if (!hoursList || hoursList.length === 0 || !dateStr) return null;
+    for (const h of hoursList) {
+        if (h.specificDate === dateStr) {
+            return h;
+        }
+    }
+    const parts = dateStr.split('-').map(Number);
+    if (parts.length === 3) {
+        const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+        const jsDay = dt.getDay();
+        const dow = jsDay === 0 ? 7 : jsDay;
+        for (const h of hoursList) {
+            if (h.dayOfWeek === dow) {
+                return h;
+            }
+        }
+    }
+    return null;
+}
+
+async function updateDateTimeConstraints() {
+    const r = getSelectedRestaurant();
+    const threshold = getMinBookingThreshold(r);
+    const searchTimeHelp = document.getElementById('searchTimeHelp');
+    const checkAvailabilityBtn = document.getElementById('checkAvailabilityBtn');
+
+    searchDateInput.min = threshold.todayStr;
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 365);
+    searchDateInput.max = maxDate.toISOString().split('T')[0];
+
+    if (!searchDateInput.value || searchDateInput.value < threshold.todayStr) {
+        searchDateInput.value = threshold.todayStr;
+    }
+
+    const selectedDate = searchDateInput.value;
+    const isToday = (selectedDate === threshold.todayStr);
+
+    let schedule = null;
+    if (r) {
+        const hoursList = await getRestaurantHours(r.id);
+        schedule = getScheduleForDate(hoursList, selectedDate);
+    }
+
+    const pad = n => String(n).padStart(2, '0');
+
+    if (schedule) {
+        const isClosed = (schedule.closed ?? schedule.isClosed ?? false);
+        if (isClosed) {
+            searchTimeInput.disabled = true;
+            if (checkAvailabilityBtn) checkAvailabilityBtn.disabled = true;
+            searchTimeInput.removeAttribute('min');
+            searchTimeInput.removeAttribute('max');
+            if (searchTimeHelp) {
+                searchTimeHelp.innerText = `Restaurant is closed on this date (${selectedDate}). Please select another date.`;
+                searchTimeHelp.className = 'form-text text-danger';
+                searchTimeHelp.style.display = 'block';
+            }
+            return;
+        }
+
+        const openTimeStr = (schedule.openTime || '11:00:00').substring(0, 5);
+        const closeTimeStr = (schedule.closeTime || '23:00:00').substring(0, 5);
+        const [closeH, closeM] = closeTimeStr.split(':').map(Number);
+        const closeMinutes = closeH * 60 + closeM;
+
+        const minDuration = (r && r.minReservationDurationMinutes) || 45;
+        const latestSeatingMinutes = closeMinutes - minDuration;
+        const latestH = Math.floor(latestSeatingMinutes / 60);
+        const latestM = latestSeatingMinutes % 60;
+        const latestSeatingStr = `${pad(latestH)}:${pad(latestM)}`;
+
+        let minAllowedTime = openTimeStr;
+
+        if (isToday) {
+            if (threshold.isNextDay || threshold.minTimeStr > latestSeatingStr) {
+                searchTimeInput.disabled = true;
+                if (checkAvailabilityBtn) checkAvailabilityBtn.disabled = true;
+                searchTimeInput.removeAttribute('min');
+                searchTimeInput.removeAttribute('max');
+                if (searchTimeHelp) {
+                    searchTimeHelp.innerText = `No more seating slots available today (operating hours: ${openTimeStr} – ${closeTimeStr}, latest seating: ${latestSeatingStr} with ${threshold.advanceMinutes}m advance notice required).`;
+                    searchTimeHelp.className = 'form-text text-danger';
+                    searchTimeHelp.style.display = 'block';
+                }
+                return;
+            }
+            if (threshold.minTimeStr > openTimeStr) {
+                minAllowedTime = threshold.minTimeStr;
+            }
+        }
+
+        searchTimeInput.disabled = false;
+        if (checkAvailabilityBtn) checkAvailabilityBtn.disabled = false;
+
+        searchTimeInput.min = minAllowedTime;
+        searchTimeInput.max = latestSeatingStr;
+
+        if (!searchTimeInput.value || searchTimeInput.value < minAllowedTime) {
+            searchTimeInput.value = minAllowedTime;
+        } else if (searchTimeInput.value > latestSeatingStr) {
+            searchTimeInput.value = latestSeatingStr;
+        }
+
+        if (searchTimeHelp) {
+            searchTimeHelp.className = 'form-text text-muted';
+            searchTimeHelp.innerText = `Operating hours: ${openTimeStr} – ${closeTimeStr} (Latest seating: ${latestSeatingStr} for min ${minDuration}m dining; ${threshold.advanceMinutes}m notice required)`;
+            searchTimeHelp.style.display = 'block';
+        }
+    } else {
+        searchTimeInput.disabled = false;
+        if (checkAvailabilityBtn) checkAvailabilityBtn.disabled = false;
+
+        if (isToday) {
+            if (threshold.isNextDay) {
+                searchTimeInput.min = '23:59';
+                if (searchTimeHelp) {
+                    searchTimeHelp.className = 'form-text text-danger';
+                    searchTimeHelp.innerText = `No more seating slots available today (${threshold.advanceMinutes}m advance notice required).`;
+                    searchTimeHelp.style.display = 'block';
+                }
+            } else {
+                searchTimeInput.min = threshold.minTimeStr;
+                searchTimeInput.removeAttribute('max');
+                if (!searchTimeInput.value || searchTimeInput.value < threshold.minTimeStr) {
+                    searchTimeInput.value = threshold.minTimeStr;
+                }
+                if (searchTimeHelp) {
+                    searchTimeHelp.className = 'form-text text-muted';
+                    searchTimeHelp.innerText = `Min lead time: ${threshold.advanceMinutes}m (earliest today: ${threshold.minTimeStr})`;
+                    searchTimeHelp.style.display = 'block';
+                }
+            }
+        } else {
+            searchTimeInput.removeAttribute('min');
+            searchTimeInput.removeAttribute('max');
+            if (searchTimeHelp) {
+                searchTimeHelp.style.display = 'none';
+            }
+        }
+    }
+}
+
 // --- 5. Table Availability Search & Direct Booking Flow ---
 function setupDateInputConstraints() {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const maxDate = new Date();
-    maxDate.setDate(today.getDate() + 365);
-    const maxDateStr = maxDate.toISOString().split('T')[0];
-
-    searchDateInput.min = todayStr;
-    searchDateInput.max = maxDateStr;
-    searchDateInput.value = todayStr;
+    searchDateInput.addEventListener('change', () => updateDateTimeConstraints());
+    searchRestaurantSelect.addEventListener('change', () => updateDateTimeConstraints());
+    updateDateTimeConstraints();
 }
 
 searchAvailabilityForm.addEventListener('submit', async (e) => {
@@ -284,6 +508,104 @@ searchAvailabilityForm.addEventListener('submit', async (e) => {
     const party = parseInt(searchPartyInput.value, 10);
 
     if (!restId || !date || !time) return;
+
+    const r = restaurantMap.get(restId);
+    const threshold = getMinBookingThreshold(r);
+
+    if (date < threshold.todayStr) {
+        searchResultArea.style.display = 'block';
+        searchResultArea.innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-exclamation-octagon-fill me-2"></i>
+                <strong>Invalid Date:</strong> Dining date cannot be in the past.
+            </div>
+        `;
+        directBookingCard.style.display = 'none';
+        waitingListOptInCard.style.display = 'none';
+        return;
+    }
+
+    if (date === threshold.todayStr) {
+        if (threshold.isNextDay || time < threshold.minTimeStr) {
+            searchResultArea.style.display = 'block';
+            searchResultArea.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    <strong>Invalid Dining Time:</strong> Dining time cannot be in the past or within the minimum lead time of ${threshold.advanceMinutes} minutes (earliest available time today is ${threshold.minTimeStr}).
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
+    }
+
+    const hoursList = await getRestaurantHours(restId);
+    const schedule = getScheduleForDate(hoursList, date);
+
+    if (schedule) {
+        const isClosed = (schedule.closed ?? schedule.isClosed ?? false);
+        if (isClosed) {
+            searchResultArea.style.display = 'block';
+            searchResultArea.innerHTML = `
+                <div class="alert alert-secondary mb-0">
+                    <i class="bi bi-door-closed-fill me-2"></i>
+                    <strong>Restaurant Closed!</strong> This restaurant is closed on ${date}. Please select another date.
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
+
+        const openTimeStr = (schedule.openTime || '11:00:00').substring(0, 5);
+        const closeTimeStr = (schedule.closeTime || '23:00:00').substring(0, 5);
+        const [closeH, closeM] = closeTimeStr.split(':').map(Number);
+        const closeMinutes = closeH * 60 + closeM;
+        const minDuration = (r && r.minReservationDurationMinutes) || 45;
+        const latestSeatingMinutes = closeMinutes - minDuration;
+        const pad = n => String(n).padStart(2, '0');
+        const latestSeatingStr = `${pad(Math.floor(latestSeatingMinutes / 60))}:${pad(latestSeatingMinutes % 60)}`;
+
+        if (time < openTimeStr) {
+            searchResultArea.style.display = 'block';
+            searchResultArea.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    <strong>Invalid Dining Time:</strong> Seating time (${time}) is before the opening time of ${openTimeStr}.
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
+
+        if (time >= closeTimeStr) {
+            searchResultArea.style.display = 'block';
+            searchResultArea.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    <strong>Invalid Dining Time:</strong> Seating time (${time}) is at or after closing time (${closeTimeStr}).
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
+
+        if (time > latestSeatingStr) {
+            searchResultArea.style.display = 'block';
+            searchResultArea.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    <strong>Invalid Dining Time:</strong> Seating time (${time}) is too close to closing time (${closeTimeStr}). Latest seating allowed is ${latestSeatingStr} for the minimum dining duration of ${minDuration} minutes.
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
+    }
 
     searchResultArea.style.display = 'block';
     searchResultArea.innerHTML = `
@@ -297,8 +619,47 @@ searchAvailabilityForm.addEventListener('submit', async (e) => {
 
     try {
         const res = await authFetch(`/api/v1/availability?restaurantId=${restId}&date=${date}&time=${time}:00&partySize=${party}`);
+        
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            const detailMsg = errData.detail || (errData.invalidParams && errData.invalidParams[0]?.reason) || 'Failed to verify availability';
+            searchResultArea.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-exclamation-octagon-fill me-2"></i>
+                    <strong>Validation Error:</strong> ${escapeHtml(detailMsg)}
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
+
         const data = await res.json();
         lastSearchResult = { ...data, restaurantId: restId, date, time, party };
+
+        if (data.isClosed || data.reason === 'RESTAURANT_CLOSED') {
+            searchResultArea.innerHTML = `
+                <div class="alert alert-secondary mb-0">
+                    <i class="bi bi-door-closed-fill me-2"></i>
+                    <strong>Restaurant Closed!</strong> This establishment is closed on ${date}. Please select another date.
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
+
+        if (data.reason === 'EXCEEDS_TOTAL_CAPACITY' || (data.totalRestaurantCapacity > 0 && party > data.totalRestaurantCapacity)) {
+            searchResultArea.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-people-fill me-2"></i>
+                    <strong>Party Size Exceeds Capacity!</strong> This restaurant has a total seating capacity of ${data.totalRestaurantCapacity || 'fewer'} guests. Your requested party of ${party} cannot be accommodated.
+                </div>
+            `;
+            directBookingCard.style.display = 'none';
+            waitingListOptInCard.style.display = 'none';
+            return;
+        }
 
         if (data.isAvailable) {
             // Immediate availability found
@@ -310,9 +671,59 @@ searchAvailabilityForm.addEventListener('submit', async (e) => {
                     </div>
                 </div>
             `;
-            const r = restaurantMap.get(restId);
             bookingSummaryText.innerText = `${r ? r.name : 'Restaurant'} on ${date} at ${time} for ${party} guests`;
+
+            // Check if party exceeds single table/combo capacity -> multi-table notice
+            const multiNotice = document.getElementById('multiTableNotice');
+            if (multiNotice) {
+                if (data.maxTableCapacity > 0 && party > data.maxTableCapacity) {
+                    multiNotice.style.display = 'block';
+                } else {
+                    multiNotice.style.display = 'none';
+                }
+            }
+
+            // Populate duration selector in 15-min increments capped at closing time
+            const durationSelect = document.getElementById('bookingDurationSelect');
+            const durationHelp = document.getElementById('durationLimitsHelp');
+            const minDur = (r && r.minReservationDurationMinutes) || 45;
+            const defaultDur = (r && r.defaultReservationDurationMinutes) || 90;
+            const maxDur = (r && r.maxReservationDurationMinutes) || 180;
+
+            const [seatingH, seatingM] = time.split(':').map(Number);
+            const seatingMinutes = seatingH * 60 + seatingM;
+            let maxAllowedForSlot = maxDur;
+            if (schedule && schedule.closeTime) {
+                const [cH, cM] = schedule.closeTime.substring(0, 5).split(':').map(Number);
+                const closeMins = cH * 60 + cM;
+                if (closeMins > seatingMinutes) {
+                    maxAllowedForSlot = Math.min(maxDur, closeMins - seatingMinutes);
+                }
+            }
+
+            if (durationHelp) {
+                durationHelp.innerText = `(Min: ${minDur} min, Default: ${defaultDur} min, Max: ${maxAllowedForSlot} min)`;
+            }
+            if (durationSelect) {
+                durationSelect.innerHTML = '';
+                for (let d = minDur; d <= maxAllowedForSlot; d += 15) {
+                    const opt = document.createElement('option');
+                    opt.value = d;
+                    opt.textContent = `${d} minutes${d === defaultDur ? ' (Default)' : ''}${d === maxAllowedForSlot ? ' (Max before close)' : ''}`;
+                    if (d === defaultDur || (defaultDur > maxAllowedForSlot && d === maxAllowedForSlot)) opt.selected = true;
+                    durationSelect.appendChild(opt);
+                }
+                if (durationSelect.options.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = minDur;
+                    opt.textContent = `${minDur} minutes`;
+                    opt.selected = true;
+                    durationSelect.appendChild(opt);
+                }
+            }
+
             directBookingCard.style.display = 'block';
+            waitingListOptInCard.style.display = 'none';
         } else {
             // Unavailable slot -> Prompt conditional waiting list
             searchResultArea.innerHTML = `
@@ -322,34 +733,60 @@ searchAvailabilityForm.addEventListener('submit', async (e) => {
                 </div>
             `;
 
-            // Auto-populate ±1 hour window
+            // Auto-populate ±1 hour window ensuring it is NOT in the past and within operating hours
             const [hours, minutes] = time.split(':').map(Number);
             const earliestH = Math.max(0, hours - 1);
             const latestH = Math.min(23, hours + 1);
             const pad = (n) => String(n).padStart(2, '0');
 
-            waitEarliestInput.value = `${pad(earliestH)}:${pad(minutes)}`;
-            waitLatestInput.value = `${pad(latestH)}:${pad(minutes)}`;
+            let earliestStr = `${pad(earliestH)}:${pad(minutes)}`;
+            let latestStr = `${pad(latestH)}:${pad(minutes)}`;
 
-            // Clamp if today and earliest is in past
-            const now = new Date();
-            const todayStr = now.toISOString().split('T')[0];
-            if (date === todayStr) {
-                const curH = now.getHours();
-                const curM = now.getMinutes();
-                if (earliestH < curH || (earliestH === curH && minutes < curM)) {
-                    waitEarliestInput.value = `${pad(curH)}:${pad(curM)}`;
+            if (date === threshold.todayStr) {
+                if (earliestStr < threshold.minTimeStr) {
+                    earliestStr = threshold.minTimeStr;
+                }
+                if (latestStr <= earliestStr) {
+                    const [eh, em] = earliestStr.split(':').map(Number);
+                    const lh = Math.min(23, eh + 1);
+                    latestStr = `${pad(lh)}:${pad(em)}`;
                 }
             }
 
+            if (schedule) {
+                const openTimeStr = (schedule.openTime || '11:00:00').substring(0, 5);
+                const closeTimeStr = (schedule.closeTime || '23:00:00').substring(0, 5);
+                const [closeH, closeM] = closeTimeStr.split(':').map(Number);
+                const closeMinutes = closeH * 60 + closeM;
+                const minDuration = (r && r.minReservationDurationMinutes) || 45;
+                const latestSeatingMinutes = closeMinutes - minDuration;
+                const latestSeatingStr = `${pad(Math.floor(latestSeatingMinutes / 60))}:${pad(latestSeatingMinutes % 60)}`;
+
+                if (earliestStr < openTimeStr) {
+                    earliestStr = openTimeStr;
+                }
+                if (latestStr > latestSeatingStr) {
+                    latestStr = latestSeatingStr;
+                }
+                if (latestStr < earliestStr) {
+                    latestStr = earliestStr;
+                }
+            }
+
+            waitEarliestInput.value = earliestStr;
+            waitLatestInput.value = latestStr;
+
+            directBookingCard.style.display = 'none';
             waitingListOptInCard.style.display = 'block';
         }
     } catch (err) {
         searchResultArea.innerHTML = `
             <div class="alert alert-danger mb-0">
-                <i class="bi bi-exclamation-octagon-fill me-2"></i> Failed to verify availability: ${err.message}
+                <i class="bi bi-exclamation-octagon-fill me-2"></i> Failed to verify availability: ${escapeHtml(err.message)}
             </div>
         `;
+        directBookingCard.style.display = 'none';
+        waitingListOptInCard.style.display = 'none';
     }
 });
 
@@ -364,6 +801,8 @@ instantBookBtn.addEventListener('click', async () => {
     const startDateTime = `${date}T${time}:00`;
     const customerName = customerDisplayName.innerText || 'Customer';
     const customerEmail = customerEmailDisplay.innerText || 'customer@example.com';
+    const durationSelect = document.getElementById('bookingDurationSelect');
+    const durationMinutes = durationSelect ? parseInt(durationSelect.value, 10) : 90;
 
     try {
         const payload = {
@@ -373,7 +812,7 @@ instantBookBtn.addEventListener('click', async () => {
             customerEmail,
             partySize: party,
             startTime: new Date(startDateTime).toISOString(),
-            durationMinutes: 90,
+            durationMinutes: durationMinutes || 90,
             cancellationWindowHours: 2,
             availableTables: availableTables && availableTables.length > 0 ? availableTables : undefined,
             combinations: combinations && combinations.length > 0 ? combinations : undefined
@@ -631,11 +1070,14 @@ function createWaitlistCard(entry) {
                     <i class="bi bi-calendar3 me-1"></i> Target Date: ${entry.targetDate}
                 </div>
             </div>
-            <span class="badge ${statusBadgeClass} status-badge">${entry.status}</span>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-light text-dark border"><i class="bi bi-people-fill me-1 text-primary"></i>${entry.partySize} Guests</span>
+                <span class="badge ${statusBadgeClass} status-badge">${entry.status}</span>
+            </div>
         </div>
         <div class="d-flex justify-content-between align-items-center pt-2 border-top mt-2">
             <div class="small text-muted">
-                <i class="bi bi-clock me-1"></i> Window: ${entry.earliestTime} - ${entry.latestTime} (${entry.partySize} guests)
+                <i class="bi bi-clock me-1"></i> Window: ${entry.earliestTime} - ${entry.latestTime}
             </div>
             ${canLeave ? `
                 <button class="btn btn-sm btn-outline-secondary leave-wait-btn" data-id="${entry.id}">

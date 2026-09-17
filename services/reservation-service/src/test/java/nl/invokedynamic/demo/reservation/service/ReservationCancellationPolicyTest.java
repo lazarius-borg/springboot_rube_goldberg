@@ -37,7 +37,7 @@ class ReservationCancellationPolicyTest {
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         reservationService = new ReservationService(
-                reservationRepository, allocationRepository, outboxRepository, allocationEngine, objectMapper
+                reservationRepository, allocationRepository, outboxRepository, allocationEngine, objectMapper, null
         );
     }
 

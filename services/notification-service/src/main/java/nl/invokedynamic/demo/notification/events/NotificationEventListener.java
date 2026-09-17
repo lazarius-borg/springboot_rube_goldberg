@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -62,7 +64,7 @@ public class NotificationEventListener {
                 emailSender.sendEmail(event.customerId(), event.customerEmail(), "RESERVATION_CONFIRMED", "Reservation Confirmed", body);
 
                 // Dispatch SSE event to connected customer
-                java.util.Map<String, Object> ssePayload = new java.util.LinkedHashMap<>();
+                Map<String, Object> ssePayload = new LinkedHashMap<>();
                 ssePayload.put("reservationId", event.reservationId().toString());
                 ssePayload.put("startTime", event.startTime().toString());
                 ssePayload.put("partySize", event.partySize());
@@ -83,7 +85,7 @@ public class NotificationEventListener {
                 emailSender.sendEmail(event.customerId(), event.customerEmail(), "RESERVATION_CANCELLED", "Reservation Cancelled", body);
 
                 // Dispatch SSE event to connected customer
-                java.util.Map<String, Object> ssePayload = new java.util.LinkedHashMap<>();
+                Map<String, Object> ssePayload = new LinkedHashMap<>();
                 ssePayload.put("reservationId", event.reservationId().toString());
                 ssePayload.put("reason", event.reason() != null ? event.reason() : "Customer cancellation");
                 emitterService.sendToCustomerOrEmail(event.customerId(), event.customerEmail(), "RESERVATION_CANCELLED", ssePayload);
@@ -112,7 +114,7 @@ public class NotificationEventListener {
                 emailSender.sendEmail(event.customerId(), event.customerEmail(), "WAITING_LIST_OFFER", "Table Available - Reservation Offer", body);
 
                 // Dispatch SSE event to connected customer
-                java.util.Map<String, Object> ssePayload = new java.util.LinkedHashMap<>();
+                Map<String, Object> ssePayload = new LinkedHashMap<>();
                 ssePayload.put("offerId", event.offerId().toString());
                 ssePayload.put("waitingListEntryId", event.waitingListEntryId().toString());
                 ssePayload.put("restaurantId", event.restaurantId().toString());

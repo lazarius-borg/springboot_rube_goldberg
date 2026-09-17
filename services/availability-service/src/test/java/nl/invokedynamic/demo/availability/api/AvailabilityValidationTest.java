@@ -114,6 +114,23 @@ class AvailabilityValidationTest {
     }
 
     @Test
+    void shouldReturnBadRequestWhenCustomerChecksTimeWithinMinimumAdvanceWindow() throws Exception {
+        UUID restId = UUID.randomUUID();
+        when(availabilityService.checkAvailability(eq(restId), eq(LocalDate.of(2026, 9, 20)), eq(LocalTime.of(19, 0)), eq(2)))
+                .thenThrow(new IllegalArgumentException("Dining time must be at least 30 minutes in advance"));
+
+        mockMvc.perform(get("/api/v1/availability")
+                .param("restaurantId", restId.toString())
+                .param("date", "2026-09-20")
+                .param("time", "19:00:00")
+                .param("partySize", "2"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.invalidParams[0].name").value("time"))
+                .andExpect(jsonPath("$.invalidParams[0].reason").value("Dining time must be at least 30 minutes in advance"));
+    }
+
+    @Test
     void shouldReturnOkWhenManagerChecksPastAvailability() throws Exception {
         UUID restId = UUID.randomUUID();
         when(availabilityService.checkAvailability(eq(restId), eq(LocalDate.of(2020, 1, 1)), eq(LocalTime.of(19, 0)), eq(2)))

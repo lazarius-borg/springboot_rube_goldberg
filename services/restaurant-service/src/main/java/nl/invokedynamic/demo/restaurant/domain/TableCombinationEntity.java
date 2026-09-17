@@ -39,6 +39,9 @@ public class TableCombinationEntity {
     public UUID getId() { return id; }
     public UUID getRestaurantId() { return restaurantId; }
     public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
     public List<UUID> getTableIds() { return tableIds; }
     public int getCombinedCapacity() { return combinedCapacity; }
+    public void setCombinedCapacity(int combinedCapacity) { this.combinedCapacity = combinedCapacity; }
 }
+

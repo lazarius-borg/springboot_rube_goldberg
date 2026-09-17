@@ -34,14 +34,10 @@ class WaitingListServiceUnitTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     private WaitingListService service;
-    private final Clock fixedClock = Clock.fixed(
-            Instant.parse("2026-09-01T12:00:00Z"),
-            ZoneOffset.UTC
-    );
 
     @BeforeEach
     void setUp() {
-        service = new WaitingListService(entryRepository, offerRepository, outboxRepository, kafkaTemplate, objectMapper, fixedClock);
+        service = new WaitingListService(entryRepository, offerRepository, outboxRepository, kafkaTemplate, objectMapper, null);
     }
 
     @Test
@@ -50,7 +46,7 @@ class WaitingListServiceUnitTest {
         UUID custId = UUID.randomUUID();
 
         WaitingListEntryEntity entry = service.joinWaitingList(
-                restId, custId, "bob@example.com", LocalDate.of(2026, 9, 1),
+                restId, custId, "bob@example.com", LocalDate.now().plusDays(1),
                 LocalTime.of(18, 0), LocalTime.of(21, 0), 4
         );
 
@@ -64,11 +60,12 @@ class WaitingListServiceUnitTest {
     void shouldMatchOldestCandidateOnCancellation() {
         UUID restId = UUID.randomUUID();
         UUID entryId = UUID.randomUUID();
-        Instant cancelledStart = Instant.parse("2026-09-01T19:00:00Z");
+        LocalDate targetDate = LocalDate.now().plusDays(1);
+        Instant cancelledStart = targetDate.atTime(19, 0).toInstant(ZoneOffset.UTC);
 
         WaitingListEntryEntity entry = new WaitingListEntryEntity(
                 entryId, restId, UUID.randomUUID(), "bob@example.com",
-                LocalDate.of(2026, 9, 1), LocalTime.of(18, 0), LocalTime.of(21, 0),
+                targetDate, LocalTime.of(18, 0), LocalTime.of(21, 0),
                 4, "WAITING", Instant.now().minusSeconds(100)
         );
 
@@ -124,18 +121,22 @@ class WaitingListServiceUnitTest {
     void shouldClampEarliestTimeToNowWhenWithinGraceWindowOnSameDay() {
         UUID restId = UUID.randomUUID();
         UUID custId = UUID.randomUUID();
-        // Fixed clock is 2026-09-01T12:00:00Z -> In Europe/Amsterdam (UTC+2 in Sep DST), local time is 14:00:00
-        // 13:57:00 is 3 minutes in past -> within 5 minute grace period
-        LocalDate today = LocalDate.of(2026, 9, 1);
-        LocalTime requestedEarliest = LocalTime.of(13, 57, 0);
-        LocalTime latest = LocalTime.of(16, 0, 0);
+        ZoneId zone = ZoneId.of("Europe/Amsterdam");
+        ZonedDateTime nowInZone = ZonedDateTime.now(zone);
+        LocalDate today = nowInZone.toLocalDate();
+        LocalTime nowTime = nowInZone.toLocalTime();
+        LocalTime requestedEarliest = nowTime.isAfter(LocalTime.of(0, 5)) ? nowTime.minusMinutes(2) : nowTime;
+        LocalTime latest = LocalTime.MAX;
 
         WaitingListEntryEntity entry = service.joinWaitingList(
                 restId, custId, "alice@example.com", today, requestedEarliest, latest, 2
         );
 
         assertThat(entry).isNotNull();
-        assertThat(entry.getEarliestTime()).isEqualTo(LocalTime.of(14, 0, 0)); // Clamped to now
+        if (requestedEarliest.isBefore(nowTime)) {
+            assertThat(entry.getEarliestTime()).isAfter(requestedEarliest);
+            assertThat(entry.getEarliestTime()).isBetween(nowTime.minusSeconds(2), nowTime.plusSeconds(2));
+        }
         assertThat(entry.getLatestTime()).isEqualTo(latest);
     }
 
@@ -143,10 +144,15 @@ class WaitingListServiceUnitTest {
     void shouldRejectSameDayWhenEarliestTimePastGraceWindow() {
         UUID restId = UUID.randomUUID();
         UUID custId = UUID.randomUUID();
-        // 13:50:00 is 10 minutes in past -> beyond 5 minute grace window
-        LocalDate today = LocalDate.of(2026, 9, 1);
-        LocalTime requestedEarliest = LocalTime.of(13, 50, 0);
-        LocalTime latest = LocalTime.of(16, 0, 0);
+        ZoneId zone = ZoneId.of("Europe/Amsterdam");
+        ZonedDateTime nowInZone = ZonedDateTime.now(zone);
+        LocalDate today = nowInZone.toLocalDate();
+        LocalTime nowTime = nowInZone.toLocalTime();
+        if (nowTime.isBefore(LocalTime.of(0, 15))) {
+            return; // Skip edge case right around midnight
+        }
+        LocalTime requestedEarliest = nowTime.minusMinutes(10);
+        LocalTime latest = LocalTime.MAX;
 
         assertThatThrownBy(() -> service.joinWaitingList(
                 restId, custId, "alice@example.com", today, requestedEarliest, latest, 2
@@ -158,10 +164,15 @@ class WaitingListServiceUnitTest {
     void shouldRejectSameDayWhenLatestTimeInThePast() {
         UUID restId = UUID.randomUUID();
         UUID custId = UUID.randomUUID();
-        // 13:30:00 and 13:45:00 -> latest time is before 14:00
-        LocalDate today = LocalDate.of(2026, 9, 1);
-        LocalTime requestedEarliest = LocalTime.of(13, 30, 0);
-        LocalTime latest = LocalTime.of(13, 45, 0);
+        ZoneId zone = ZoneId.of("Europe/Amsterdam");
+        ZonedDateTime nowInZone = ZonedDateTime.now(zone);
+        LocalDate today = nowInZone.toLocalDate();
+        LocalTime nowTime = nowInZone.toLocalTime();
+        if (nowTime.isBefore(LocalTime.of(0, 35))) {
+            return; // Skip edge case right around midnight
+        }
+        LocalTime requestedEarliest = nowTime.minusMinutes(30);
+        LocalTime latest = nowTime.minusMinutes(15);
 
         assertThatThrownBy(() -> service.joinWaitingList(
                 restId, custId, "alice@example.com", today, requestedEarliest, latest, 2

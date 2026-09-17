@@ -183,6 +183,7 @@
                                 <div class="col-md-4">
                                     <label for="searchTimeInput" class="form-label fw-semibold">Seating Time</label>
                                     <input type="time" id="searchTimeInput" class="form-control" value="19:00" required>
+                                    <div id="searchTimeHelp" class="form-text text-muted" style="display: none;"></div>
                                 </div>
                                 <div class="col-md-3">
                                     <label for="searchPartyInput" class="form-label fw-semibold">Guests</label>
@@ -203,9 +204,21 @@
                                 <h6 class="fw-bold text-success mb-2">
                                     <i class="bi bi-check2-circle me-1"></i>Table is Available!
                                 </h6>
+                                <div id="multiTableNotice" class="alert alert-info py-2 px-3 small mb-3" style="display: none;">
+                                    <i class="bi bi-info-circle-fill me-1"></i>
+                                    <strong>Multi-Table Booking:</strong> Your party size exceeds single table capacities. Multiple tables will be reserved together under this single booking.
+                                </div>
                                 <p class="text-secondary small mb-3">
                                     Confirmed reservation with instant table allocation for <span id="bookingSummaryText">-</span>.
                                 </p>
+                                <div class="mb-3">
+                                    <label for="bookingDurationSelect" class="form-label small fw-semibold">
+                                        Dining Duration <span id="durationLimitsHelp" class="text-muted fw-normal">(Default: 90 min, Max: 180 min)</span>
+                                    </label>
+                                    <select id="bookingDurationSelect" class="form-select form-select-sm">
+                                        <option value="90" selected>90 minutes (Default)</option>
+                                    </select>
+                                </div>
                                 <button id="instantBookBtn" class="btn btn-success w-100 fw-semibold">
                                     <i class="bi bi-bookmark-check-fill me-1"></i>Confirm Instant Reservation
                                 </button>

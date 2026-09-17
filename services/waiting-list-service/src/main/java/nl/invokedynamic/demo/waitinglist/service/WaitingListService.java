@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.events.WaitingListEntryCreatedEvent;
 import nl.invokedynamic.demo.events.WaitingListOfferAcceptedEvent;
 import nl.invokedynamic.demo.events.WaitingListOfferCreatedEvent;
+import nl.invokedynamic.demo.waitinglist.client.TableInventoryClient;
 import nl.invokedynamic.demo.waitinglist.domain.*;
 import nl.invokedynamic.demo.waitinglist.repository.*;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -23,7 +24,7 @@ public class WaitingListService {
     private final OutboxEventRepository outboxRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
-    private final Clock clock;
+    private final TableInventoryClient tableInventoryClient;
     private static final ZoneId DEFAULT_ZONE = ZoneId.of("Europe/Amsterdam");
 
     public WaitingListService(WaitingListEntryRepository entryRepository,
@@ -31,20 +32,20 @@ public class WaitingListService {
                               OutboxEventRepository outboxRepository,
                               KafkaTemplate<String, Object> kafkaTemplate,
                               ObjectMapper objectMapper,
-                              Clock clock) {
+                              TableInventoryClient tableInventoryClient) {
         this.entryRepository = entryRepository;
         this.offerRepository = offerRepository;
         this.outboxRepository = outboxRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
-        this.clock = clock;
+        this.tableInventoryClient = tableInventoryClient;
     }
 
     @Transactional
     public WaitingListEntryEntity joinWaitingList(UUID restaurantId, UUID customerId, String customerEmail,
                                                   LocalDate targetDate, LocalTime earliestTime, LocalTime latestTime,
                                                   int partySize) {
-        ZonedDateTime nowInZone = ZonedDateTime.now(clock.withZone(DEFAULT_ZONE));
+        ZonedDateTime nowInZone = ZonedDateTime.now(DEFAULT_ZONE);
         LocalDate today = nowInZone.toLocalDate();
 
         if (targetDate.isBefore(today)) {
@@ -69,7 +70,7 @@ public class WaitingListService {
         }
 
         UUID entryId = UUID.randomUUID();
-        Instant now = clock.instant();
+        Instant now = Instant.now();
         WaitingListEntryEntity entry = new WaitingListEntryEntity(
                 entryId, restaurantId, customerId, customerEmail, targetDate, effectiveEarliest, latestTime, partySize, "WAITING", now
         );
@@ -124,13 +125,18 @@ public class WaitingListService {
         LocalDate date = cancelledStart.atZone(ZoneOffset.UTC).toLocalDate();
         LocalTime time = cancelledStart.atZone(ZoneOffset.UTC).toLocalTime();
 
+        int releasedCapacity = (tableInventoryClient != null)
+                ? tableInventoryClient.getReleasedCapacity(restaurantId, releasedTableIds)
+                : 0;
+        int effectiveCapacity = Math.max(partySize, releasedCapacity);
+
         // FIFO search for matching waiting list entries
         List<WaitingListEntryEntity> waiting = entryRepository.findByRestaurantIdAndTargetDateAndStatusOrderByCreatedAtAsc(
                 restaurantId, date, "WAITING"
         );
 
         waiting.stream()
-                .filter(entry -> entry.getPartySize() <= partySize
+                .filter(entry -> entry.getPartySize() <= effectiveCapacity
                         && !time.isBefore(entry.getEarliestTime())
                         && !time.isAfter(entry.getLatestTime()))
                 .findFirst()

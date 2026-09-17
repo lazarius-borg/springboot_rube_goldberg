@@ -336,7 +336,14 @@ function filterReservationsTable() {
     tbody.innerHTML = filtered.map(r => {
         const startTimeStr = new Date(r.startTime).toLocaleString();
         const statusBadge = getStatusBadge(r.status);
-        const tablesStr = (r.allocatedTables && r.allocatedTables.length > 0) ? `${r.allocatedTables.length} table(s)` : '-';
+        const tablesStr = (r.allocatedTableLabels && r.allocatedTableLabels.length > 0)
+            ? escapeHtml(r.allocatedTableLabels.join(', '))
+            : ((r.allocatedTables && r.allocatedTables.length > 0) ? `${r.allocatedTables.length} table(s)` : '-');
+
+        let statusContent = statusBadge;
+        if (r.status === 'CANCELLED' && r.cancellationReason) {
+            statusContent += `<div class="mt-1"><small class="text-danger-emphasis fst-italic"><i class="bi bi-info-circle me-1"></i>${escapeHtml(r.cancellationReason)}</small></div>`;
+        }
 
         let actionButtons = '';
         if (r.status === 'CONFIRMED') {
@@ -359,8 +366,8 @@ function filterReservationsTable() {
                 <td><small class="text-muted">${escapeHtml(r.customerEmail || '-')}</small></td>
                 <td><span class="badge bg-light text-dark border">${r.partySize} guests</span></td>
                 <td><small>${startTimeStr}</small></td>
-                <td><small>${tablesStr}</small></td>
-                <td>${statusBadge}</td>
+                <td><small class="fw-semibold text-primary">${tablesStr}</small></td>
+                <td>${statusContent}</td>
                 <td class="text-end">${actionButtons}</td>
             </tr>
         `;
@@ -499,7 +506,7 @@ async function loadTablesAndHours(restaurantId) {
                 <div class="mb-2"><strong>Name:</strong> ${escapeHtml(r.name)}</div>
                 <div class="mb-2"><strong>Address:</strong> ${escapeHtml(r.address || 'N/A')}</div>
                 <div class="mb-2"><strong>Timezone:</strong> <code>${escapeHtml(r.timezone || 'Europe/Amsterdam')}</code></div>
-                <div class="mb-2"><strong>Default Dining Duration:</strong> ${r.defaultReservationDurationMinutes} mins</div>
+                <div class="mb-2"><strong>Min / Default / Max Duration:</strong> ${r.minReservationDurationMinutes || 45} / ${r.defaultReservationDurationMinutes} / ${r.maxReservationDurationMinutes || 180} mins</div>
                 <div class="mb-2"><strong>Min Lead Time:</strong> ${r.minBookingAdvanceMinutes} mins</div>
                 <div class="mb-2"><strong>Max Advance Horizon:</strong> ${r.maxBookingHorizonDays} days</div>
                 <div><strong>Cancellation Window:</strong> ${r.cancellationWindowHours} hours</div>
@@ -510,31 +517,194 @@ async function loadTablesAndHours(restaurantId) {
         const tRes = await authFetch(`/api/v1/restaurants/${restaurantId}/tables`);
         if (tRes.ok) {
             const tables = await tRes.json();
+            window.currentTables = tables;
             if (tables.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No tables registered yet.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No tables registered yet.</td></tr>';
                 comboContainer.innerHTML = '<span class="text-muted small">No tables available to combine.</span>';
             } else {
                 tbody.innerHTML = tables.map(t => `
                     <tr>
                         <td><strong>${escapeHtml(t.tableNumber)}</strong></td>
                         <td><span class="badge bg-light text-dark border">${t.capacity} seats</span></td>
-                        <td>${escapeHtml(t.zone || 'Main Dining')}</td>
+                        <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(t.zone || 'Main Dining')}</span></td>
                         <td><small class="text-muted font-monospace">${t.id}</small></td>
+                        <td>
+                            <button class="btn btn-outline-primary btn-sm py-0 px-2 me-1" onclick="openEditTableModal('${t.id}')">
+                                <i class="bi bi-pencil"></i> Edit
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="openDeleteTableModal('${t.id}', '${escapeHtml(t.tableNumber)}')">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </td>
                     </tr>
                 `).join('');
 
                 comboContainer.innerHTML = tables.map(t => `
                     <div class="form-check">
-                        <input class="form-check-input combo-table-check" type="checkbox" value="${t.id}" id="chk_${t.id}">
+                        <input class="form-check-input combo-table-check" type="checkbox" value="${t.id}" data-capacity="${t.capacity}" data-number="${escapeHtml(t.tableNumber)}" id="chk_${t.id}" onchange="updateCombinationDefaults()">
                         <label class="form-check-label small" for="chk_${t.id}">
-                            Table ${escapeHtml(t.tableNumber)} (${t.capacity} seats, ${escapeHtml(t.zone || 'Main')})
+                            Table ${escapeHtml(t.tableNumber)} (${t.capacity} seats, ${escapeHtml(t.zone || 'Main Dining')})
                         </label>
                     </div>
                 `).join('');
+
+                updateCombinationDefaults();
             }
         }
+
+        // 3. Load existing hours
+        loadExistingHours(restaurantId);
     } catch (err) {
         console.error('Failed to load floor tables:', err);
+    }
+}
+
+function updateCombinationDefaults() {
+    const checkedBoxes = document.querySelectorAll('.combo-table-check:checked');
+    let totalCap = 0;
+    const tableNums = [];
+    checkedBoxes.forEach(cb => {
+        totalCap += parseInt(cb.getAttribute('data-capacity') || 0);
+        tableNums.push(cb.getAttribute('data-number'));
+    });
+    const nameInput = document.getElementById('newCombName');
+    const capInput = document.getElementById('newCombCapacity');
+    if (nameInput) {
+        nameInput.value = tableNums.length > 0 ? ('Combo: ' + tableNums.join(' + ')) : '';
+    }
+    if (capInput) {
+        capInput.value = totalCap > 0 ? totalCap : 8;
+    }
+}
+
+function openEditTableModal(tableId) {
+    const table = (window.currentTables || []).find(t => t.id === tableId);
+    if (!table) return;
+    document.getElementById('editTableId').value = table.id;
+    document.getElementById('editTableNumber').value = table.tableNumber;
+    document.getElementById('editTableCapacity').value = table.capacity;
+    document.getElementById('editTableZone').value = table.zone || 'Main Dining';
+    document.getElementById('editTableErrorAlert').classList.add('d-none');
+    const modal = new bootstrap.Modal(document.getElementById('editTableModal'));
+    modal.show();
+}
+
+async function handleEditTable(e) {
+    e.preventDefault();
+    if (!currentRestaurantId || currentRestaurantId === 'ALL') return;
+    const tableId = document.getElementById('editTableId').value;
+    const tableNumber = document.getElementById('editTableNumber').value;
+    const capacity = parseInt(document.getElementById('editTableCapacity').value);
+    const zone = document.getElementById('editTableZone').value;
+    const errAlert = document.getElementById('editTableErrorAlert');
+    errAlert.classList.add('d-none');
+
+    try {
+        const res = await authFetch(`/api/v1/restaurants/${currentRestaurantId}/tables/${tableId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ tableNumber, capacity, zone })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || err.title || `HTTP ${res.status}`);
+        }
+        const modalEl = document.getElementById('editTableModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        loadTablesAndHours(currentRestaurantId);
+    } catch (err) {
+        errAlert.innerText = `Failed to update table: ${err.message}`;
+        errAlert.classList.remove('d-none');
+    }
+}
+
+let pendingDeleteTableId = null;
+
+function openDeleteTableModal(tableId, tableNumber) {
+    pendingDeleteTableId = tableId;
+    document.getElementById('deleteTableNumberSpan').innerText = tableNumber;
+    const modal = new bootstrap.Modal(document.getElementById('deleteTableModal'));
+    modal.show();
+}
+
+async function confirmDeleteTable() {
+    if (!pendingDeleteTableId || !currentRestaurantId) return;
+    try {
+        const res = await authFetch(`/api/v1/restaurants/${currentRestaurantId}/tables/${pendingDeleteTableId}`, {
+            method: 'DELETE'
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || err.title || `HTTP ${res.status}`);
+        }
+        const modalEl = document.getElementById('deleteTableModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        loadTablesAndHours(currentRestaurantId);
+    } catch (err) {
+        alert(`Failed to delete table: ${err.message}`);
+    } finally {
+        pendingDeleteTableId = null;
+    }
+}
+
+function openEditSettingsModal() {
+    if (!currentRestaurantId || currentRestaurantId === 'ALL') return;
+    const r = (restaurantsList || []).find(rest => rest.id === currentRestaurantId);
+    if (!r) return;
+    document.getElementById('editSettingsName').value = r.name || '';
+    document.getElementById('editSettingsAddress').value = r.address || '';
+    document.getElementById('editSettingsTimezone').value = r.timezone || 'Europe/Amsterdam';
+    document.getElementById('editSettingsMinDuration').value = r.minReservationDurationMinutes || 45;
+    document.getElementById('editSettingsDefaultDuration').value = r.defaultReservationDurationMinutes || 90;
+    document.getElementById('editSettingsMaxDuration').value = r.maxReservationDurationMinutes || 180;
+    document.getElementById('editSettingsMinAdvance').value = r.minBookingAdvanceMinutes || 30;
+    document.getElementById('editSettingsMaxHorizon').value = r.maxBookingHorizonDays || 60;
+    document.getElementById('editSettingsCancelWindow').value = r.cancellationWindowHours || 2;
+    document.getElementById('editSettingsErrorAlert').classList.add('d-none');
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('editRestaurantSettingsModal'));
+    modal.show();
+}
+
+async function handleSaveSettings(e) {
+    e.preventDefault();
+    if (!currentRestaurantId || currentRestaurantId === 'ALL') return;
+    const errAlert = document.getElementById('editSettingsErrorAlert');
+    errAlert.classList.add('d-none');
+
+    const payload = {
+        name: document.getElementById('editSettingsName').value,
+        address: document.getElementById('editSettingsAddress').value,
+        timezone: document.getElementById('editSettingsTimezone').value,
+        minReservationDurationMinutes: parseInt(document.getElementById('editSettingsMinDuration').value),
+        defaultReservationDurationMinutes: parseInt(document.getElementById('editSettingsDefaultDuration').value),
+        maxReservationDurationMinutes: parseInt(document.getElementById('editSettingsMaxDuration').value),
+        minBookingAdvanceMinutes: parseInt(document.getElementById('editSettingsMinAdvance').value),
+        maxBookingHorizonDays: parseInt(document.getElementById('editSettingsMaxHorizon').value),
+        cancellationWindowHours: parseInt(document.getElementById('editSettingsCancelWindow').value)
+    };
+
+    try {
+        const res = await authFetch(`/api/v1/restaurants/${currentRestaurantId}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || err.title || `HTTP ${res.status}`);
+        }
+        const updated = await res.json();
+        const idx = restaurantsList.findIndex(r => r.id === currentRestaurantId);
+        if (idx >= 0) restaurantsList[idx] = updated;
+
+        const modalEl = document.getElementById('editRestaurantSettingsModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        loadTablesAndHours(currentRestaurantId);
+    } catch (err) {
+        errAlert.innerText = `Failed to save settings: ${err.message}`;
+        errAlert.classList.remove('d-none');
     }
 }
 
@@ -583,9 +753,10 @@ async function handleAddCombination(e) {
     const errAlert = document.getElementById('addCombErrorAlert');
     errAlert.classList.add('d-none');
 
+    const name = document.getElementById('newCombName')?.value || null;
     const checkedBoxes = document.querySelectorAll('.combo-table-check:checked');
     const tableIds = Array.from(checkedBoxes).map(cb => cb.value);
-    const capacity = parseInt(document.getElementById('newCombCapacity').value);
+    const capacity = parseInt(document.getElementById('newCombCapacity').value) || null;
 
     if (tableIds.length < 2) {
         errAlert.innerText = 'Please select at least 2 tables to create a combination.';
@@ -594,12 +765,13 @@ async function handleAddCombination(e) {
     }
 
     try {
+        const payload = { tableIds };
+        if (name && name.trim()) payload.name = name.trim();
+        if (capacity && capacity > 0) payload.combinedCapacity = capacity;
+
         const res = await authFetch(`/api/v1/restaurants/${currentRestaurantId}/table-combinations`, {
             method: 'POST',
-            body: JSON.stringify({
-                tableIds: tableIds,
-                combinedCapacity: capacity
-            })
+            body: JSON.stringify(payload)
         });
 
         if (!res.ok) {
@@ -625,10 +797,52 @@ function initHoursEditor() {
     tbody.innerHTML = days.map((day, idx) => `
         <tr>
             <td><strong>${day}</strong></td>
-            <td><input type="time" class="form-control form-control-sm hours-open" data-day="${idx + 1}" value="11:00"></td>
-            <td><input type="time" class="form-control form-control-sm hours-close" data-day="${idx + 1}" value="23:00"></td>
+            <td>
+                <div class="form-check form-switch">
+                    <input class="form-check-input hours-closed-toggle" type="checkbox" id="closed_toggle_${idx + 1}" data-day="${idx + 1}" onchange="toggleDayClosed(${idx + 1})">
+                    <label class="form-check-label small" for="closed_toggle_${idx + 1}">Closed</label>
+                </div>
+            </td>
+            <td><input type="time" class="form-control form-control-sm hours-open" id="hours_open_${idx + 1}" data-day="${idx + 1}" value="11:00"></td>
+            <td><input type="time" class="form-control form-control-sm hours-close" id="hours_close_${idx + 1}" data-day="${idx + 1}" value="23:00"></td>
         </tr>
     `).join('');
+}
+
+function toggleDayClosed(day) {
+    const isClosed = document.getElementById(`closed_toggle_${day}`).checked;
+    const openInp = document.getElementById(`hours_open_${day}`);
+    const closeInp = document.getElementById(`hours_close_${day}`);
+    if (openInp && closeInp) {
+        openInp.disabled = isClosed;
+        closeInp.disabled = isClosed;
+    }
+}
+
+async function loadExistingHours(restaurantId) {
+    try {
+        const res = await authFetch(`/api/v1/restaurants/${restaurantId}/opening-hours`);
+        if (res.ok) {
+            const schedules = await res.json();
+            schedules.forEach(s => {
+                if (s.dayOfWeek) {
+                    const day = s.dayOfWeek;
+                    const closedToggle = document.getElementById(`closed_toggle_${day}`);
+                    const openInp = document.getElementById(`hours_open_${day}`);
+                    const closeInp = document.getElementById(`hours_close_${day}`);
+                    if (closedToggle && openInp && closeInp) {
+                        closedToggle.checked = !!s.isClosed;
+                        if (s.openTime) openInp.value = s.openTime.substring(0, 5);
+                        if (s.closeTime) closeInp.value = s.closeTime.substring(0, 5);
+                        openInp.disabled = !!s.isClosed;
+                        closeInp.disabled = !!s.isClosed;
+                    }
+                }
+            });
+        }
+    } catch (err) {
+        console.warn('Failed to load existing hours:', err);
+    }
 }
 
 async function handleSaveOperatingHours(e) {
@@ -640,21 +854,24 @@ async function handleSaveOperatingHours(e) {
 
     const openInputs = document.querySelectorAll('.hours-open');
     const closeInputs = document.querySelectorAll('.hours-close');
+    const closedToggles = document.querySelectorAll('.hours-closed-toggle');
 
     const schedule = [];
     openInputs.forEach((inp, idx) => {
         const day = parseInt(inp.getAttribute('data-day'));
+        const isClosed = closedToggles[idx]?.checked || false;
         schedule.push({
             dayOfWeek: day,
-            openTime: inp.value + ':00',
-            closeTime: closeInputs[idx].value + ':00'
+            isClosed: isClosed,
+            openTime: isClosed ? null : (inp.value ? inp.value + ':00' : '11:00:00'),
+            closeTime: isClosed ? null : (closeInputs[idx].value ? closeInputs[idx].value + ':00' : '23:00:00')
         });
     });
 
     try {
         const res = await authFetch(`/api/v1/restaurants/${currentRestaurantId}/opening-hours`, {
             method: 'PUT',
-            body: JSON.stringify(schedule)
+            body: JSON.stringify({ schedules: schedule })
         });
 
         if (!res.ok) {
@@ -681,7 +898,9 @@ async function handleRegisterRestaurant(e) {
     const name = document.getElementById('regName').value;
     const address = document.getElementById('regAddress').value;
     const tz = document.getElementById('regTimezone').value;
+    const minDuration = parseInt(document.getElementById('regMinDuration').value) || 45;
     const duration = parseInt(document.getElementById('regDuration').value);
+    const maxDuration = parseInt(document.getElementById('regMaxDuration').value) || 180;
     const advance = parseInt(document.getElementById('regAdvance').value);
     const horizon = parseInt(document.getElementById('regHorizon').value);
     const cancelWindow = parseInt(document.getElementById('regCancelWindow').value);
@@ -693,7 +912,9 @@ async function handleRegisterRestaurant(e) {
                 name: name,
                 address: address,
                 timezone: tz,
+                minReservationDurationMinutes: minDuration,
                 defaultReservationDurationMinutes: duration,
+                maxReservationDurationMinutes: maxDuration,
                 minBookingAdvanceMinutes: advance,
                 maxBookingHorizonDays: horizon,
                 cancellationWindowHours: cancelWindow
@@ -838,9 +1059,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Floor & Table handlers
     document.getElementById('addTableForm')?.addEventListener('submit', handleAddTable);
+    document.getElementById('editTableForm')?.addEventListener('submit', handleEditTable);
     document.getElementById('addCombinationForm')?.addEventListener('submit', handleAddCombination);
     document.getElementById('editHoursForm')?.addEventListener('submit', handleSaveOperatingHours);
     document.getElementById('registerRestaurantForm')?.addEventListener('submit', handleRegisterRestaurant);
+    document.getElementById('editRestaurantSettingsForm')?.addEventListener('submit', handleSaveSettings);
 
     // Availability form
     document.getElementById('managerAvailabilityForm')?.addEventListener('submit', handleCheckAvailability);

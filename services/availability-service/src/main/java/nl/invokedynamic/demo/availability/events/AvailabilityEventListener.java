@@ -54,7 +54,10 @@ public class AvailabilityEventListener {
                 RestaurantCreatedEvent event = objectMapper.treeToValue(node, RestaurantCreatedEvent.class);
                 restaurantRepository.save(new RestaurantViewEntity(
                         event.restaurantId(), event.name(), event.timezone(),
-                        event.defaultReservationDurationMinutes(), event.minBookingAdvanceMinutes(),
+                        event.minReservationDurationMinutes() > 0 ? event.minReservationDurationMinutes() : 45,
+                        event.defaultReservationDurationMinutes(),
+                        event.maxReservationDurationMinutes() > 0 ? event.maxReservationDurationMinutes() : 180,
+                        event.minBookingAdvanceMinutes(),
                         event.maxBookingHorizonDays(), event.cancellationWindowHours(), Instant.now()
                 ));
                 log.info("Handled RestaurantCreatedEvent in availability-service for restaurantId: {}", event.restaurantId());

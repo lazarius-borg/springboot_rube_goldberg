@@ -84,3 +84,7 @@ security:
     accepted-issuers:
       - ${KEYCLOAK_EXTERNAL_ISSUER_URI:http://localhost:8081/realms/rube-goldberg}
       - ${KEYCLOAK_INTERNAL_ISSUER_URI:http://keycloak:8080/realms/rube-goldberg}
+
+services:
+  restaurant-service:
+    uri: ${SERVICES_RESTAURANT_SERVICE_URI:http://restaurant-service:8083}

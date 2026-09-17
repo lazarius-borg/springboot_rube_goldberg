@@ -11,6 +11,11 @@ public record TableConfigurationChangedEvent(
         List<TableConfig> tables,
         List<CombinationConfig> combinations
 ) {
-    public record TableConfig(UUID tableId, String tableNumber, int capacity) {}
+    public record TableConfig(UUID tableId, String tableNumber, int capacity, String zone) {
+        public TableConfig(UUID tableId, String tableNumber, int capacity) {
+            this(tableId, tableNumber, capacity, "Main Dining");
+        }
+    }
     public record CombinationConfig(UUID combinationId, String name, List<UUID> tableIds, int combinedCapacity) {}
 }
+
