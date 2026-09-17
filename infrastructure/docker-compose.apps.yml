@@ -20,6 +20,7 @@ services:
       - RESERVATION_SERVICE_URI=http://reservation-service:8085
       - WAITING_LIST_SERVICE_URI=http://waiting-list-service:8086
       - ANALYTICS_SERVICE_URI=http://analytics-service:8087
+      - NOTIFICATION_SERVICE_URI=http://notification-service:8088
     mem_limit: 512m
     depends_on:
       - redis
@@ -177,6 +178,8 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       - MAIL_HOST=mailpit
       - MAIL_PORT=1025
+      - KEYCLOAK_ISSUER_URI=http://keycloak:8080/realms/rube-goldberg
+      - SECURITY_JWT_ACCEPTED_ISSUERS=http://localhost:8081/realms/rube-goldberg,http://keycloak:8080/realms/rube-goldberg
     mem_limit: 512m
     depends_on:
       postgres:

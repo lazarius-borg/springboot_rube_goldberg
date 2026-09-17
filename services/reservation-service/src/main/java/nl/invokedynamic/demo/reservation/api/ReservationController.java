@@ -140,11 +140,18 @@ public class ReservationController {
     }
 
     @GetMapping
-    @Operation(summary = "List reservations for restaurant")
-    public ResponseEntity<Page<ReservationEntity>> listReservations(
-            @Parameter(description = "Restaurant UUID") @RequestParam UUID restaurantId,
+    @Operation(summary = "List reservations for restaurant or customer")
+    public ResponseEntity<?> listReservations(
+            @Parameter(description = "Restaurant UUID") @RequestParam(required = false) UUID restaurantId,
+            @Parameter(description = "Customer UUID") @RequestParam(required = false) UUID customerId,
             @ParameterObject Pageable pageable) {
-        return ResponseEntity.ok(reservationService.listReservationsByRestaurant(restaurantId, pageable));
+        if (customerId != null) {
+            return ResponseEntity.ok(reservationService.listReservationsByCustomer(customerId, pageable));
+        }
+        if (restaurantId != null) {
+            return ResponseEntity.ok(reservationService.listReservationsByRestaurant(restaurantId, pageable));
+        }
+        return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Either restaurantId or customerId must be provided"));
     }
 
     @DeleteMapping("/{id}")

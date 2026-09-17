@@ -194,12 +194,12 @@ class ReservationSecurityTest {
             filterChainProxy.doFilter(mgrBookReq, mgrBookRes, new MockFilterChain());
             assertThat(mgrBookRes.getStatus()).isNotIn(401, 403);
 
-            // 3. Customer CANNOT query restaurant-wide reservations (GET /api/v1/reservations) -> 403
+            // 3. Customer CAN query reservations (GET /api/v1/reservations)
             MockHttpServletRequest listReq = new MockHttpServletRequest("GET", "/api/v1/reservations");
             listReq.addHeader("Authorization", "Bearer customer-token");
             MockHttpServletResponse listRes = new MockHttpServletResponse();
             filterChainProxy.doFilter(listReq, listRes, new MockFilterChain());
-            assertThat(listRes.getStatus()).isEqualTo(403);
+            assertThat(listRes.getStatus()).isNotIn(401, 403);
 
             // 4. Manager CAN query restaurant-wide reservations (GET /api/v1/reservations)
             MockHttpServletRequest mgrListReq = new MockHttpServletRequest("GET", "/api/v1/reservations");

@@ -215,12 +215,12 @@ class WaitingListSecurityTest {
             filterChainProxy.doFilter(mgrGetReq, mgrGetRes, new MockFilterChain());
             assertThat(mgrGetRes.getStatus()).isNotIn(401, 403);
 
-            // 6. Customer without manager role CANNOT query waiting list -> 403
+            // 6. Customer CAN query waiting list
             MockHttpServletRequest custGetReq = new MockHttpServletRequest("GET", "/api/v1/waiting-list");
             custGetReq.addHeader("Authorization", "Bearer customer-token");
             MockHttpServletResponse custGetRes = new MockHttpServletResponse();
             filterChainProxy.doFilter(custGetReq, custGetRes, new MockFilterChain());
-            assertThat(custGetRes.getStatus()).isEqualTo(403);
+            assertThat(custGetRes.getStatus()).isNotIn(401, 403);
         });
     }
 }

@@ -45,6 +45,10 @@ spring:
               uri: ${ANALYTICS_SERVICE_URI:http://localhost:8087}
               predicates:
                 - Path=/api/v1/analytics, /api/v1/analytics/**
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8088}
+              predicates:
+                - Path=/api/v1/notifications, /api/v1/notifications/**
       routes:
         - id: customer-service
           uri: ${CUSTOMER_SERVICE_URI:http://localhost:8082}
@@ -70,6 +74,10 @@ spring:
           uri: ${ANALYTICS_SERVICE_URI:http://localhost:8087}
           predicates:
             - Path=/api/v1/analytics, /api/v1/analytics/**
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8088}
+          predicates:
+            - Path=/api/v1/notifications, /api/v1/notifications/**
 
 management:
   endpoints:

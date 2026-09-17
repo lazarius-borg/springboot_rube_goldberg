@@ -10,6 +10,7 @@ import nl.invokedynamic.demo.notification.domain.ReminderScheduleEntity;
 import nl.invokedynamic.demo.notification.mail.MailpitEmailSender;
 import nl.invokedynamic.demo.notification.repository.ProcessedEventRepository;
 import nl.invokedynamic.demo.notification.repository.ReminderScheduleRepository;
+import nl.invokedynamic.demo.notification.service.CustomerSseEmitterService;
 import nl.invokedynamic.demo.notification.template.EmailTemplateRenderer;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -26,17 +27,20 @@ public class NotificationEventListener {
     private final EmailTemplateRenderer templateRenderer;
     private final ReminderScheduleRepository reminderRepository;
     private final ProcessedEventRepository processedEventRepository;
+    private final CustomerSseEmitterService emitterService;
     private final ObjectMapper objectMapper;
 
     public NotificationEventListener(MailpitEmailSender emailSender,
                                      EmailTemplateRenderer templateRenderer,
                                      ReminderScheduleRepository reminderRepository,
                                      ProcessedEventRepository processedEventRepository,
+                                     CustomerSseEmitterService emitterService,
                                      ObjectMapper objectMapper) {
         this.emailSender = emailSender;
         this.templateRenderer = templateRenderer;
         this.reminderRepository = reminderRepository;
         this.processedEventRepository = processedEventRepository;
+        this.emitterService = emitterService;
         this.objectMapper = objectMapper;
     }
 
@@ -57,6 +61,13 @@ public class NotificationEventListener {
                 );
                 emailSender.sendEmail(event.customerId(), event.customerEmail(), "RESERVATION_CONFIRMED", "Reservation Confirmed", body);
 
+                // Dispatch SSE event to connected customer
+                java.util.Map<String, Object> ssePayload = new java.util.LinkedHashMap<>();
+                ssePayload.put("reservationId", event.reservationId().toString());
+                ssePayload.put("startTime", event.startTime().toString());
+                ssePayload.put("partySize", event.partySize());
+                emitterService.sendToCustomerOrEmail(event.customerId(), event.customerEmail(), "RESERVATION_CONFIRMED", ssePayload);
+
                 // Schedule reminder for 24h prior
                 Instant reminderTime = event.startTime().minus(Duration.ofHours(24));
                 reminderRepository.save(new ReminderScheduleEntity(
@@ -70,6 +81,13 @@ public class NotificationEventListener {
 
                 String body = templateRenderer.renderReservationCancelled(event.reason());
                 emailSender.sendEmail(event.customerId(), event.customerEmail(), "RESERVATION_CANCELLED", "Reservation Cancelled", body);
+
+                // Dispatch SSE event to connected customer
+                java.util.Map<String, Object> ssePayload = new java.util.LinkedHashMap<>();
+                ssePayload.put("reservationId", event.reservationId().toString());
+                ssePayload.put("reason", event.reason() != null ? event.reason() : "Customer cancellation");
+                emitterService.sendToCustomerOrEmail(event.customerId(), event.customerEmail(), "RESERVATION_CANCELLED", ssePayload);
+
                 reminderRepository.deleteByReservationId(event.reservationId());
                 markProcessed(event.eventId(), "ReservationCancelled");
             }
@@ -92,6 +110,16 @@ public class NotificationEventListener {
                         event.offerId().toString(), event.offeredStartTime(), event.expiresAt()
                 );
                 emailSender.sendEmail(event.customerId(), event.customerEmail(), "WAITING_LIST_OFFER", "Table Available - Reservation Offer", body);
+
+                // Dispatch SSE event to connected customer
+                java.util.Map<String, Object> ssePayload = new java.util.LinkedHashMap<>();
+                ssePayload.put("offerId", event.offerId().toString());
+                ssePayload.put("waitingListEntryId", event.waitingListEntryId().toString());
+                ssePayload.put("restaurantId", event.restaurantId().toString());
+                ssePayload.put("offeredStartTime", event.offeredStartTime().toString());
+                ssePayload.put("expiresAt", event.expiresAt().toString());
+                emitterService.sendToCustomerOrEmail(event.customerId(), event.customerEmail(), "WAITING_LIST_OFFER", ssePayload);
+
                 markProcessed(event.eventId(), "WaitingListOfferCreated");
             }
         } catch (Exception ignored) {}

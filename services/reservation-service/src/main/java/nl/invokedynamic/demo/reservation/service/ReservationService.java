@@ -108,6 +108,10 @@ public class ReservationService {
         return reservationRepository.findByRestaurantId(restaurantId, pageable);
     }
 
+    public Page<ReservationEntity> listReservationsByCustomer(UUID customerId, Pageable pageable) {
+        return reservationRepository.findByCustomerId(customerId, pageable);
+    }
+
     public List<UUID> getAllocatedTables(UUID reservationId) {
         return allocationRepository.findByReservationId(reservationId).stream()
                 .map(ReservationTableAllocationEntity::getTableId)

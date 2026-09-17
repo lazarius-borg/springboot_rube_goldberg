@@ -33,7 +33,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/reservations").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/reservations").hasAnyRole("RESTAURANT_MANAGER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/reservations").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/reservations/*").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/reservations/*").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/reservations/*/status").hasAnyRole("RESTAURANT_MANAGER", "ADMIN")

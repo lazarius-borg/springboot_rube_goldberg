@@ -34,14 +34,32 @@ public class WaitingListController {
     }
 
     @GetMapping
-    @Operation(summary = "Get waiting list entries", description = "Manager inspection of fair FIFO queue for a restaurant.")
+    @Operation(summary = "Get waiting list entries", description = "Inspection of fair FIFO queue for a restaurant or customer.")
     @ApiResponse(responseCode = "200", description = "Waiting list entries retrieved")
-    public ResponseEntity<List<WaitingListEntryEntity>> getWaitingList(
-            @Parameter(description = "Restaurant UUID") @RequestParam UUID restaurantId,
+    public ResponseEntity<?> getWaitingList(
+            @Parameter(description = "Restaurant UUID") @RequestParam(required = false) UUID restaurantId,
+            @Parameter(description = "Customer UUID") @RequestParam(required = false) UUID customerId,
             @Parameter(description = "Target dining date") @RequestParam(required = false) LocalDate targetDate,
             @Parameter(description = "Entry status filter") @RequestParam(required = false) String status) {
-        List<WaitingListEntryEntity> entries = waitingListService.getWaitingList(restaurantId, targetDate, status);
-        return ResponseEntity.ok(entries);
+        if (customerId != null) {
+            return ResponseEntity.ok(waitingListService.getWaitingListByCustomer(customerId));
+        }
+        if (restaurantId != null) {
+            List<WaitingListEntryEntity> entries = waitingListService.getWaitingList(restaurantId, targetDate, status);
+            return ResponseEntity.ok(entries);
+        }
+        return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Either restaurantId or customerId must be provided"));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Leave waiting list", description = "Cancels active waiting list placement.")
+    public ResponseEntity<?> leaveWaitingList(@Parameter(description = "Waiting list entry UUID") @PathVariable UUID id) {
+        try {
+            WaitingListEntryEntity cancelled = waitingListService.cancelWaitingListEntry(id);
+            return ResponseEntity.ok(cancelled);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage()));
+        }
     }
 
     @PostMapping

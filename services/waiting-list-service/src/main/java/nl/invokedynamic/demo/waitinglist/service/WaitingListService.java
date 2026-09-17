@@ -103,6 +103,22 @@ public class WaitingListService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<WaitingListEntryEntity> getWaitingListByCustomer(UUID customerId) {
+        return entryRepository.findByCustomerId(customerId);
+    }
+
+    @Transactional
+    public WaitingListEntryEntity cancelWaitingListEntry(UUID entryId) {
+        WaitingListEntryEntity entry = entryRepository.findById(entryId)
+                .orElseThrow(() -> new IllegalArgumentException("Waiting list entry not found: " + entryId));
+        if ("WAITING".equals(entry.getStatus()) || "OFFERED".equals(entry.getStatus())) {
+            entry.setStatus("CANCELLED");
+            entryRepository.save(entry);
+        }
+        return entry;
+    }
+
     @Transactional
     public void processCancellationOpening(UUID restaurantId, Instant cancelledStart, int partySize, List<UUID> releasedTableIds) {
         LocalDate date = cancelledStart.atZone(ZoneOffset.UTC).toLocalDate();
