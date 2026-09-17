@@ -1,0 +1,1 @@
+ALTER TABLE table_combination ADD COLUMN IF NOT EXISTS zone VARCHAR(50) DEFAULT 'Main Dining';

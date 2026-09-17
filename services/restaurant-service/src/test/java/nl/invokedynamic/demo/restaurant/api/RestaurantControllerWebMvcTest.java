@@ -1,5 +1,6 @@
 package nl.invokedynamic.demo.restaurant.api;
 
+import nl.invokedynamic.demo.restaurant.api.dto.TableCombinationResponse;
 import nl.invokedynamic.demo.restaurant.api.dto.UpdateRestaurantSettingsRequest;
 import nl.invokedynamic.demo.restaurant.domain.RestaurantEntity;
 import nl.invokedynamic.demo.restaurant.domain.RestaurantTableEntity;
@@ -175,9 +176,13 @@ class RestaurantControllerWebMvcTest {
         UUID restId = UUID.randomUUID();
         UUID t1 = UUID.randomUUID();
         UUID t2 = UUID.randomUUID();
-        TableCombinationEntity combo = new TableCombinationEntity(UUID.randomUUID(), restId, "Combo: T1 + T2", List.of(t1, t2), 8);
+        TableCombinationEntity combo = new TableCombinationEntity(UUID.randomUUID(), restId, "Combo: T1 + T2", "Main Dining Room", List.of(t1, t2), 8);
+        TableCombinationResponse response = new TableCombinationResponse(
+                combo.getId(), restId, "Combo: T1 + T2", "Main Dining Room", List.of(t1, t2), List.of("T1", "T2"), 8
+        );
         when(restaurantService.addTableCombination(eq(restId), any(), eq(List.of(t1, t2)), eq(8)))
                 .thenReturn(combo);
+        when(restaurantService.toResponse(combo)).thenReturn(response);
 
         mockMvc.perform(post("/api/v1/restaurants/" + restId + "/table-combinations")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -189,7 +194,89 @@ class RestaurantControllerWebMvcTest {
                 """, t1, t2)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Combo: T1 + T2"))
+                .andExpect(jsonPath("$.zone").value("Main Dining Room"))
                 .andExpect(jsonPath("$.combinedCapacity").value(8));
+    }
+
+    @Test
+    void shouldReturn400WhenAddTableCombinationFailsValidation() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID t1 = UUID.randomUUID();
+        UUID t2 = UUID.randomUUID();
+        when(restaurantService.addTableCombination(eq(restId), any(), eq(List.of(t1, t2)), any()))
+                .thenThrow(new IllegalArgumentException("All combined tables must reside in the same floor zone"));
+
+        mockMvc.perform(post("/api/v1/restaurants/" + restId + "/table-combinations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(String.format("""
+                    {
+                      "tableIds": ["%s", "%s"]
+                    }
+                """, t1, t2)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("All combined tables must reside in the same floor zone"));
+    }
+
+    @Test
+    void shouldGetTableCombinationsSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        TableCombinationResponse response = new TableCombinationResponse(
+                UUID.randomUUID(), restId, "Combo: T1 + T2", "Main Dining Room", List.of(UUID.randomUUID(), UUID.randomUUID()), List.of("T1", "T2"), 8
+        );
+        when(restaurantService.getTableCombinationResponses(restId)).thenReturn(List.of(response));
+
+        mockMvc.perform(get("/api/v1/restaurants/" + restId + "/table-combinations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("Combo: T1 + T2"))
+                .andExpect(jsonPath("$[0].zone").value("Main Dining Room"))
+                .andExpect(jsonPath("$[0].combinedCapacity").value(8));
+    }
+
+    @Test
+    void shouldDeleteTableCombinationSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID combId = UUID.randomUUID();
+        doNothing().when(restaurantService).deleteTableCombination(restId, combId);
+
+        mockMvc.perform(delete("/api/v1/restaurants/" + restId + "/table-combinations/" + combId))
+                .andExpect(status().isNoContent());
+
+        verify(restaurantService).deleteTableCombination(restId, combId);
+    }
+
+    @Test
+    void shouldReturn404WhenDeletingNonExistentTableCombination() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID combId = UUID.randomUUID();
+        doThrow(new java.util.NoSuchElementException("Not found")).when(restaurantService).deleteTableCombination(restId, combId);
+
+        mockMvc.perform(delete("/api/v1/restaurants/" + restId + "/table-combinations/" + combId))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldUpdateTableCombinationSuccessfully() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID combId = UUID.randomUUID();
+        TableCombinationEntity entity = new TableCombinationEntity(combId, restId, "Updated Combo", "Main Dining Room", List.of(UUID.randomUUID()), 6);
+        TableCombinationResponse response = new TableCombinationResponse(
+                combId, restId, "Updated Combo", "Main Dining Room", List.of(UUID.randomUUID()), List.of("T1"), 6
+        );
+
+        when(restaurantService.updateTableCombination(eq(restId), eq(combId), eq("Updated Combo"), eq(6))).thenReturn(entity);
+        when(restaurantService.toResponse(entity)).thenReturn(response);
+
+        mockMvc.perform(put("/api/v1/restaurants/" + restId + "/table-combinations/" + combId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "name": "Updated Combo",
+                      "combinedCapacity": 6
+                    }
+                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated Combo"))
+                .andExpect(jsonPath("$.combinedCapacity").value(6));
     }
 
     @Test

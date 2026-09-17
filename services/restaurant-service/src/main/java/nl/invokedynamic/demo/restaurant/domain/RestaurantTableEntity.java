@@ -35,6 +35,10 @@ public class RestaurantTableEntity {
         this(id, restaurantId, tableNumber, capacity, "Main Dining", status, createdAt);
     }
 
+    public RestaurantTableEntity(UUID id, UUID restaurantId, String tableNumber, int capacity, String zone) {
+        this(id, restaurantId, tableNumber, capacity, zone, "ACTIVE", Instant.now());
+    }
+
     public RestaurantTableEntity(UUID id, UUID restaurantId, String tableNumber, int capacity, String zone, String status, Instant createdAt) {
         this.id = id;
         this.restaurantId = restaurantId;

@@ -12,6 +12,8 @@ import nl.invokedynamic.demo.restaurant.api.dto.CreateCombinationRequest;
 import nl.invokedynamic.demo.restaurant.api.dto.CreateRestaurantRequest;
 import nl.invokedynamic.demo.restaurant.api.dto.CreateTableRequest;
 import nl.invokedynamic.demo.restaurant.api.dto.OpeningHoursConfigDto;
+import nl.invokedynamic.demo.restaurant.api.dto.TableCombinationResponse;
+import nl.invokedynamic.demo.restaurant.api.dto.UpdateCombinationRequest;
 import nl.invokedynamic.demo.restaurant.api.dto.UpdateRestaurantSettingsRequest;
 import nl.invokedynamic.demo.restaurant.api.dto.UpdateTableRequest;
 import nl.invokedynamic.demo.restaurant.domain.*;
@@ -187,10 +189,45 @@ public class RestaurantController {
     public ResponseEntity<?> addCombination(@PathVariable UUID id, @Valid @RequestBody CreateCombinationRequest req) {
         try {
             TableCombinationEntity comb = restaurantService.addTableCombination(id, req.name(), req.tableIds(), req.combinedCapacity());
-            return ResponseEntity.status(HttpStatus.CREATED).body(comb);
+            return ResponseEntity.status(HttpStatus.CREATED).body(restaurantService.toResponse(comb));
         } catch (IllegalArgumentException e) {
             ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
             return ResponseEntity.badRequest().body(pd);
+        }
+    }
+
+    @GetMapping("/{id}/table-combinations")
+    @Operation(summary = "List table combinations", description = "Retrieves all active table combinations configured for the restaurant.")
+    public ResponseEntity<List<TableCombinationResponse>> getTableCombinations(@PathVariable UUID id) {
+        return ResponseEntity.ok(restaurantService.getTableCombinationResponses(id));
+    }
+
+    @PutMapping("/{id}/table-combinations/{combinationId}")
+    @Operation(summary = "Update table combination", description = "Updates name and/or capacity of an existing table combination.")
+    public ResponseEntity<?> updateTableCombination(
+            @PathVariable UUID id,
+            @PathVariable UUID combinationId,
+            @Valid @RequestBody UpdateCombinationRequest req) {
+        try {
+            TableCombinationEntity updated = restaurantService.updateTableCombination(id, combinationId, req.name(), req.combinedCapacity());
+            return ResponseEntity.ok(restaurantService.toResponse(updated));
+        } catch (NoSuchElementException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+        } catch (IllegalArgumentException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+            return ResponseEntity.badRequest().body(pd);
+        }
+    }
+
+    @DeleteMapping("/{id}/table-combinations/{combinationId}")
+    @Operation(summary = "Delete table combination", description = "Deletes a table combination, unpublishing it from future bookings.")
+    public ResponseEntity<Void> deleteTableCombination(@PathVariable UUID id, @PathVariable UUID combinationId) {
+        try {
+            restaurantService.deleteTableCombination(id, combinationId);
+            return ResponseEntity.noContent().build();
+        } catch (java.util.NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
         }
     }
 

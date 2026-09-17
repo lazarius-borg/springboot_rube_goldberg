@@ -227,7 +227,8 @@ function onRestaurantChanged() {
         loadWaitingList();
     } else {
         document.getElementById('reservationsTableBody').innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Select an individual restaurant to inspect reservations.</td></tr>';
-        document.getElementById('tablesTableBody').innerHTML = '<tr><td colspan="4" class="text-center py-3 text-muted">Select an individual restaurant to view floor tables.</td></tr>';
+        document.getElementById('tablesTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">Select an individual restaurant to view floor tables.</td></tr>';
+        document.getElementById('combinationsTableBody').innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">Select an individual restaurant to view table combinations.</td></tr>';
         document.getElementById('waitingListTableBody').innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Select an individual restaurant to inspect waiting list queue.</td></tr>';
         document.getElementById('restaurantProfileDetails').innerHTML = 'Select a specific restaurant to view establishment profile.';
     }
@@ -495,7 +496,7 @@ async function loadTablesAndHours(restaurantId) {
 
     const profileDiv = document.getElementById('restaurantProfileDetails');
     const tbody = document.getElementById('tablesTableBody');
-    const comboContainer = document.getElementById('combinationTablesChecklist');
+    const combTbody = document.getElementById('combinationsTableBody');
 
     try {
         // 1. Fetch Restaurant Details
@@ -520,13 +521,12 @@ async function loadTablesAndHours(restaurantId) {
             window.currentTables = tables;
             if (tables.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No tables registered yet.</td></tr>';
-                comboContainer.innerHTML = '<span class="text-muted small">No tables available to combine.</span>';
             } else {
                 tbody.innerHTML = tables.map(t => `
                     <tr>
                         <td><strong>${escapeHtml(t.tableNumber)}</strong></td>
                         <td><span class="badge bg-light text-dark border">${t.capacity} seats</span></td>
-                        <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(t.zone || 'Main Dining')}</span></td>
+                        <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(t.zone || 'Main Dining Room')}</span></td>
                         <td><small class="text-muted font-monospace">${t.id}</small></td>
                         <td>
                             <button class="btn btn-outline-primary btn-sm py-0 px-2 me-1" onclick="openEditTableModal('${t.id}')">
@@ -538,25 +538,89 @@ async function loadTablesAndHours(restaurantId) {
                         </td>
                     </tr>
                 `).join('');
+            }
+            populateZoneSelector();
+        }
 
-                comboContainer.innerHTML = tables.map(t => `
-                    <div class="form-check">
-                        <input class="form-check-input combo-table-check" type="checkbox" value="${t.id}" data-capacity="${t.capacity}" data-number="${escapeHtml(t.tableNumber)}" id="chk_${t.id}" onchange="updateCombinationDefaults()">
-                        <label class="form-check-label small" for="chk_${t.id}">
-                            Table ${escapeHtml(t.tableNumber)} (${t.capacity} seats, ${escapeHtml(t.zone || 'Main Dining')})
-                        </label>
-                    </div>
-                `).join('');
-
-                updateCombinationDefaults();
+        // 3. Fetch Table Combinations
+        if (combTbody) {
+            const cRes = await authFetch(`/api/v1/restaurants/${restaurantId}/table-combinations`);
+            if (cRes.ok) {
+                const combinations = await cRes.json();
+                window.currentCombinations = combinations;
+                if (combinations.length === 0) {
+                    combTbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No table combinations registered yet.</td></tr>';
+                } else {
+                    combTbody.innerHTML = combinations.map(c => `
+                        <tr>
+                            <td><strong>${escapeHtml(c.name)}</strong></td>
+                            <td><span class="badge bg-secondary-subtle text-secondary border">${escapeHtml(c.zone || 'Main Dining Room')}</span></td>
+                            <td><span class="badge bg-light text-dark border">${escapeHtml((c.tableNumbers || []).join(' + '))}</span></td>
+                            <td><strong>${c.combinedCapacity}</strong> seats</td>
+                            <td>
+                                <button class="btn btn-outline-primary btn-sm py-0 px-2 me-1" onclick="openEditCombinationModal('${c.id}')">
+                                    <i class="bi bi-pencil"></i> Edit
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="handleDeleteCombination('${c.id}', '${escapeHtml(c.name)}')">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } else {
+                combTbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No table combinations registered yet.</td></tr>';
             }
         }
 
-        // 3. Load existing hours
+        // 4. Load existing hours
         loadExistingHours(restaurantId);
     } catch (err) {
-        console.error('Failed to load floor tables:', err);
+        console.error('Failed to load floor tables and combinations:', err);
     }
+}
+
+function populateZoneSelector() {
+    const select = document.getElementById('combZoneSelect');
+    if (!select) return;
+    const tables = window.currentTables || [];
+    const zones = Array.from(new Set(tables.map(t => (t.zone || 'Main Dining Room').trim()))).sort();
+
+    select.innerHTML = '<option value="">-- Select Zone --</option>' +
+        zones.map(z => `<option value="${escapeHtml(z)}">${escapeHtml(z)}</option>`).join('');
+
+    if (zones.length === 1) {
+        select.value = zones[0];
+    }
+    filterCombinationTablesByZone();
+}
+
+function filterCombinationTablesByZone() {
+    const select = document.getElementById('combZoneSelect');
+    const comboContainer = document.getElementById('combinationTablesChecklist');
+    if (!comboContainer) return;
+    const selectedZone = select ? select.value : '';
+
+    if (!selectedZone) {
+        comboContainer.innerHTML = '<span class="small text-muted">Select a zone first...</span>';
+        updateCombinationDefaults();
+        return;
+    }
+
+    const tables = (window.currentTables || []).filter(t => (t.zone || 'Main Dining Room').trim().toLowerCase() === selectedZone.toLowerCase());
+    if (tables.length === 0) {
+        comboContainer.innerHTML = '<span class="small text-muted">No tables available in this zone.</span>';
+    } else {
+        comboContainer.innerHTML = tables.map(t => `
+            <div class="form-check">
+                <input class="form-check-input combo-table-check" type="checkbox" value="${t.id}" data-capacity="${t.capacity}" data-number="${escapeHtml(t.tableNumber)}" id="chk_${t.id}" onchange="updateCombinationDefaults()">
+                <label class="form-check-label small" for="chk_${t.id}">
+                    Table <strong>${escapeHtml(t.tableNumber)}</strong> (${t.capacity} seats)
+                </label>
+            </div>
+        `).join('');
+    }
+    updateCombinationDefaults();
 }
 
 function updateCombinationDefaults() {
@@ -569,11 +633,24 @@ function updateCombinationDefaults() {
     });
     const nameInput = document.getElementById('newCombName');
     const capInput = document.getElementById('newCombCapacity');
+    const capHelp = document.getElementById('combCapacityHelp');
+
     if (nameInput) {
-        nameInput.value = tableNums.length > 0 ? ('Combo: ' + tableNums.join(' + ')) : '';
+        nameInput.placeholder = tableNums.length > 0 ? ('Combo: ' + tableNums.join(' + ')) : 'e.g. Combo: T1 + T2';
     }
     if (capInput) {
-        capInput.value = totalCap > 0 ? totalCap : 8;
+        capInput.max = totalCap > 0 ? totalCap : 100;
+        capInput.placeholder = totalCap > 0 ? totalCap : 'Auto-calculated sum';
+        if (tableNums.length >= 2 && (!capInput.value || parseInt(capInput.value) > totalCap)) {
+            capInput.value = totalCap;
+        }
+    }
+    if (capHelp) {
+        if (totalCap > 0) {
+            capHelp.innerText = `Constituent table sum: ${totalCap} seats. Custom capacity cannot exceed ${totalCap}.`;
+        } else {
+            capHelp.innerText = 'Defaults to sum of constituent table capacities. Can be reduced down.';
+        }
     }
 }
 
@@ -614,6 +691,72 @@ async function handleEditTable(e) {
         loadTablesAndHours(currentRestaurantId);
     } catch (err) {
         errAlert.innerText = `Failed to update table: ${err.message}`;
+        errAlert.classList.remove('d-none');
+    }
+}
+
+function openEditCombinationModal(combId) {
+    const comb = (window.currentCombinations || []).find(c => c.id === combId);
+    if (!comb) return;
+    document.getElementById('editCombId').value = comb.id;
+    document.getElementById('editCombName').value = comb.name || '';
+    document.getElementById('editCombZone').innerText = comb.zone || 'Main Dining Room';
+    document.getElementById('editCombTables').innerText = (comb.tableNumbers || []).join(' + ');
+
+    const tables = window.currentTables || [];
+    const memberTables = tables.filter(t => (comb.tableIds || []).includes(t.id));
+    const physicalSum = memberTables.reduce((acc, t) => acc + (t.capacity || 0), 0) || comb.combinedCapacity;
+
+    const capInput = document.getElementById('editCombCapacity');
+    capInput.value = comb.combinedCapacity;
+    capInput.max = physicalSum;
+    document.getElementById('editCombCapacityHelp').innerText = `Max physical capacity: ${physicalSum} seats.`;
+    document.getElementById('editCombErrorAlert').classList.add('d-none');
+
+    const modal = new bootstrap.Modal(document.getElementById('editCombinationModal'));
+    modal.show();
+}
+window.openEditCombinationModal = openEditCombinationModal;
+
+async function handleEditCombination(e) {
+    e.preventDefault();
+    if (!currentRestaurantId || currentRestaurantId === 'ALL') return;
+
+    const combId = document.getElementById('editCombId').value;
+    const name = document.getElementById('editCombName').value;
+    const capVal = document.getElementById('editCombCapacity').value;
+    const capacity = parseInt(capVal, 10);
+    const errAlert = document.getElementById('editCombErrorAlert');
+    errAlert.classList.add('d-none');
+
+    const maxCap = parseInt(document.getElementById('editCombCapacity').max, 10) || 100;
+    if (capacity > maxCap) {
+        errAlert.innerText = `Custom capacity (${capacity}) cannot exceed constituent table sum (${maxCap}).`;
+        errAlert.classList.remove('d-none');
+        return;
+    }
+
+    try {
+        const res = await authFetch(`/api/v1/restaurants/${currentRestaurantId}/table-combinations/${combId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                name: name.trim(),
+                combinedCapacity: capacity
+            })
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || errData.title || `HTTP ${res.status}`);
+        }
+
+        const modalEl = document.getElementById('editCombinationModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        loadTablesAndHours(currentRestaurantId);
+    } catch (err) {
+        errAlert.innerText = `Failed to update combination: ${err.message}`;
         errAlert.classList.remove('d-none');
     }
 }
@@ -756,10 +899,22 @@ async function handleAddCombination(e) {
     const name = document.getElementById('newCombName')?.value || null;
     const checkedBoxes = document.querySelectorAll('.combo-table-check:checked');
     const tableIds = Array.from(checkedBoxes).map(cb => cb.value);
-    const capacity = parseInt(document.getElementById('newCombCapacity').value) || null;
+    const capacityVal = document.getElementById('newCombCapacity').value;
+    const capacity = capacityVal ? parseInt(capacityVal, 10) : null;
 
     if (tableIds.length < 2) {
         errAlert.innerText = 'Please select at least 2 tables to create a combination.';
+        errAlert.classList.remove('d-none');
+        return;
+    }
+
+    let totalCap = 0;
+    checkedBoxes.forEach(cb => {
+        totalCap += parseInt(cb.dataset.capacity) || 0;
+    });
+
+    if (capacity !== null && capacity > totalCap) {
+        errAlert.innerText = `Custom capacity (${capacity}) cannot exceed the sum of constituent table capacities (${totalCap}).`;
         errAlert.classList.remove('d-none');
         return;
     }
@@ -784,12 +939,36 @@ async function handleAddCombination(e) {
         if (modal) modal.hide();
         document.getElementById('addCombinationForm').reset();
 
-        alert('Table combination created successfully.');
+        loadTablesAndHours(currentRestaurantId);
     } catch (err) {
         errAlert.innerText = `Failed to create combination: ${err.message}`;
         errAlert.classList.remove('d-none');
     }
 }
+
+async function handleDeleteCombination(combinationId, combinationName) {
+    if (!currentRestaurantId || currentRestaurantId === 'ALL') return;
+
+    if (!confirm(`Are you sure you want to delete table combination "${combinationName}"?\n\nThis will immediately unpublish it from future reservation availability. Any confirmed reservations will remain intact.`)) {
+        return;
+    }
+
+    try {
+        const res = await authFetch(`/api/v1/restaurants/${currentRestaurantId}/table-combinations/${combinationId}`, {
+            method: 'DELETE'
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || errData.title || `HTTP ${res.status}`);
+        }
+
+        loadTablesAndHours(currentRestaurantId);
+    } catch (err) {
+        alert(`Failed to delete combination: ${err.message}`);
+    }
+}
+window.handleDeleteCombination = handleDeleteCombination;
 
 function initHoursEditor() {
     const tbody = document.getElementById('hoursEditorTableBody');
@@ -1061,9 +1240,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('addTableForm')?.addEventListener('submit', handleAddTable);
     document.getElementById('editTableForm')?.addEventListener('submit', handleEditTable);
     document.getElementById('addCombinationForm')?.addEventListener('submit', handleAddCombination);
+    document.getElementById('editCombinationForm')?.addEventListener('submit', handleEditCombination);
     document.getElementById('editHoursForm')?.addEventListener('submit', handleSaveOperatingHours);
     document.getElementById('registerRestaurantForm')?.addEventListener('submit', handleRegisterRestaurant);
     document.getElementById('editRestaurantSettingsForm')?.addEventListener('submit', handleSaveSettings);
+
+    // Floor & Tables tab switch
+    document.getElementById('tab-floor')?.addEventListener('shown.bs.tab', () => {
+        if (currentRestaurantId && currentRestaurantId !== 'ALL') {
+            loadTablesAndHours(currentRestaurantId);
+        }
+    });
 
     // Availability form
     document.getElementById('managerAvailabilityForm')?.addEventListener('submit', handleCheckAvailability);

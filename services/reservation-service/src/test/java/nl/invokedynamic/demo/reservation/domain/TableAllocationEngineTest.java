@@ -92,4 +92,49 @@ class TableAllocationEngineTest {
         Optional<List<UUID>> allocated = allocator.allocateTable(10, tables, List.of(), Set.of());
         assertThat(allocated).isEmpty();
     }
+
+    @Test
+    void shouldExcludeCombinationWhenConstituentTableIsOccupied() {
+        UUID t1 = UUID.randomUUID(); // cap 4
+        UUID t2 = UUID.randomUUID(); // cap 4
+        UUID combId = UUID.randomUUID();
+
+        List<TableAllocationEngine.TableCandidate> tables = List.of(
+                new TableAllocationEngine.TableCandidate(t1, 4),
+                new TableAllocationEngine.TableCandidate(t2, 4)
+        );
+        List<TableAllocationEngine.CombinationCandidate> combinations = List.of(
+                new TableAllocationEngine.CombinationCandidate(combId, List.of(t1, t2), 8)
+        );
+
+        // t1 is occupied
+        Optional<List<UUID>> allocated = allocator.allocateTable(8, tables, combinations, Set.of(t1));
+        // Cannot allocate combination C1 (8) because t1 is occupied, and remaining free cap is only 4
+        assertThat(allocated).isEmpty();
+    }
+
+    @Test
+    void shouldSelectAlternativeCombinationWhenFirstCombinationHasOccupiedConstituent() {
+        UUID t1 = UUID.randomUUID(); // cap 4
+        UUID t2 = UUID.randomUUID(); // cap 4
+        UUID t3 = UUID.randomUUID(); // cap 4
+        UUID c1Id = UUID.randomUUID();
+        UUID c2Id = UUID.randomUUID();
+
+        List<TableAllocationEngine.TableCandidate> tables = List.of(
+                new TableAllocationEngine.TableCandidate(t1, 4),
+                new TableAllocationEngine.TableCandidate(t2, 4),
+                new TableAllocationEngine.TableCandidate(t3, 4)
+        );
+        // Partially overlapping combinations: C1 = (T1, T2), C2 = (T2, T3)
+        List<TableAllocationEngine.CombinationCandidate> combinations = List.of(
+                new TableAllocationEngine.CombinationCandidate(c1Id, List.of(t1, t2), 8),
+                new TableAllocationEngine.CombinationCandidate(c2Id, List.of(t2, t3), 8)
+        );
+
+        // t1 is occupied -> C1 is unavailable, but C2 (t2, t3) is fully free
+        Optional<List<UUID>> allocated = allocator.allocateTable(8, tables, combinations, Set.of(t1));
+        assertThat(allocated).isPresent();
+        assertThat(allocated.get()).containsExactly(t2, t3);
+    }
 }

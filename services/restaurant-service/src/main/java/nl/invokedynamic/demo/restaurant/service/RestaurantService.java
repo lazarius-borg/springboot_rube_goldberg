@@ -3,6 +3,7 @@ package nl.invokedynamic.demo.restaurant.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import nl.invokedynamic.demo.events.RestaurantCreatedEvent;
 import nl.invokedynamic.demo.events.TableConfigurationChangedEvent;
+import nl.invokedynamic.demo.restaurant.api.dto.TableCombinationResponse;
 import nl.invokedynamic.demo.restaurant.api.dto.UpdateRestaurantSettingsRequest;
 import nl.invokedynamic.demo.restaurant.client.ReservationClient;
 import nl.invokedynamic.demo.restaurant.domain.*;
@@ -189,8 +190,13 @@ public class RestaurantService {
                 capacityChanged = true;
             }
         }
+        boolean zoneChanged = false;
         if (zone != null && !zone.isBlank()) {
-            table.setZone(zone);
+            String trimmedZone = zone.trim();
+            if (table.getZone() == null || !table.getZone().equalsIgnoreCase(trimmedZone)) {
+                table.setZone(trimmedZone);
+                zoneChanged = true;
+            }
         }
         tableRepository.save(table);
 
@@ -203,6 +209,27 @@ public class RestaurantService {
                     comb.setCombinedCapacity(newTotal);
                     combinationRepository.save(comb);
                 }
+            }
+        }
+
+        if (zoneChanged) {
+            List<TableCombinationEntity> combinations = combinationRepository.findByRestaurantId(restaurantId);
+            List<RestaurantTableEntity> allTables = tableRepository.findByRestaurantId(restaurantId);
+            Map<UUID, String> zoneMap = allTables.stream()
+                    .collect(Collectors.toMap(RestaurantTableEntity::getId, t -> t.getZone() != null ? t.getZone().trim() : "Main Dining Room"));
+            zoneMap.put(tableId, table.getZone() != null ? table.getZone().trim() : "Main Dining Room");
+
+            List<TableCombinationEntity> invalidCombos = combinations.stream()
+                    .filter(c -> c.getTableIds().contains(tableId))
+                    .filter(c -> {
+                        Set<String> zones = c.getTableIds().stream()
+                                .map(id -> zoneMap.getOrDefault(id, "Main Dining Room").toLowerCase())
+                                .collect(Collectors.toSet());
+                        return zones.size() > 1;
+                    })
+                    .toList();
+            if (!invalidCombos.isEmpty()) {
+                combinationRepository.deleteAll(invalidCombos);
             }
         }
 
@@ -246,21 +273,87 @@ public class RestaurantService {
         if (tables.size() != tableIds.size()) {
             throw new IllegalArgumentException("One or more tables not found for combination");
         }
+        for (RestaurantTableEntity t : tables) {
+            if (!t.getRestaurantId().equals(restaurantId)) {
+                throw new IllegalArgumentException("Table " + t.getTableNumber() + " does not belong to restaurant " + restaurantId);
+            }
+        }
 
-        int totalCapacity = (combinedCapacity != null && combinedCapacity > 0)
-                ? combinedCapacity
-                : tables.stream().mapToInt(RestaurantTableEntity::getCapacity).sum();
+        // Same-zone validation
+        String firstZone = tables.get(0).getZone() != null ? tables.get(0).getZone().trim() : "Main Dining Room";
+        boolean sameZone = tables.stream().allMatch(t -> {
+            String z = t.getZone() != null ? t.getZone().trim() : "Main Dining Room";
+            return z.equalsIgnoreCase(firstZone);
+        });
+        if (!sameZone) {
+            throw new IllegalArgumentException("All combined tables must reside in the same floor zone");
+        }
+
+        // Duplicate combination detection (order-insensitive set equality)
+        Set<UUID> newTableIdSet = new HashSet<>(tableIds);
+        List<TableCombinationEntity> existingCombinations = combinationRepository.findByRestaurantId(restaurantId);
+        boolean duplicateExists = existingCombinations.stream()
+                .anyMatch(c -> new HashSet<>(c.getTableIds()).equals(newTableIdSet));
+        if (duplicateExists) {
+            throw new IllegalArgumentException("A table combination containing the exact same tables already exists");
+        }
+
+        // Capacity validation & defaulting
+        int physicalSum = tables.stream().mapToInt(RestaurantTableEntity::getCapacity).sum();
+        int totalCapacity;
+        if (combinedCapacity != null && combinedCapacity > 0) {
+            if (combinedCapacity > physicalSum) {
+                throw new IllegalArgumentException("Combined capacity (" + combinedCapacity + ") cannot exceed the sum of physical table capacities (" + physicalSum + ")");
+            }
+            totalCapacity = combinedCapacity;
+        } else {
+            totalCapacity = physicalSum;
+        }
 
         String resolvedName = (name != null && !name.isBlank())
-                ? name
+                ? name.trim()
                 : "Combo: " + tables.stream().map(RestaurantTableEntity::getTableNumber).collect(Collectors.joining(" + "));
 
         TableCombinationEntity combination = new TableCombinationEntity(
-                UUID.randomUUID(), restaurantId, resolvedName, tableIds, totalCapacity
+                UUID.randomUUID(), restaurantId, resolvedName, firstZone, tableIds, totalCapacity
         );
         combinationRepository.save(combination);
         publishTableConfigurationEvent(restaurantId);
         return combination;
+    }
+
+    @Transactional
+    public TableCombinationEntity updateTableCombination(UUID restaurantId, UUID combinationId, String name, Integer combinedCapacity) {
+        TableCombinationEntity comb = combinationRepository.findByIdAndRestaurantId(combinationId, restaurantId)
+                .orElseThrow(() -> new NoSuchElementException("Table combination not found: " + combinationId));
+
+        if (name != null && !name.trim().isBlank()) {
+            comb.setName(name.trim());
+        }
+
+        if (combinedCapacity != null) {
+            List<RestaurantTableEntity> tables = tableRepository.findAllById(comb.getTableIds());
+            int physicalSum = tables.stream().mapToInt(RestaurantTableEntity::getCapacity).sum();
+            if (combinedCapacity <= 0) {
+                throw new IllegalArgumentException("Combined capacity must be greater than 0");
+            }
+            if (combinedCapacity > physicalSum) {
+                throw new IllegalArgumentException("Custom capacity (" + combinedCapacity + ") cannot exceed the sum of member table capacities (" + physicalSum + ")");
+            }
+            comb.setCombinedCapacity(combinedCapacity);
+        }
+
+        combinationRepository.save(comb);
+        publishTableConfigurationEvent(restaurantId);
+        return comb;
+    }
+
+    @Transactional
+    public void deleteTableCombination(UUID restaurantId, UUID combinationId) {
+        TableCombinationEntity comb = combinationRepository.findByIdAndRestaurantId(combinationId, restaurantId)
+                .orElseThrow(() -> new NoSuchElementException("Table combination not found: " + combinationId));
+        combinationRepository.delete(comb);
+        publishTableConfigurationEvent(restaurantId);
     }
 
     @Transactional
@@ -282,6 +375,37 @@ public class RestaurantService {
         return combinationRepository.findByRestaurantId(restaurantId);
     }
 
+    public List<TableCombinationResponse> getTableCombinationResponses(UUID restaurantId) {
+        List<TableCombinationEntity> combinations = combinationRepository.findByRestaurantId(restaurantId);
+        List<RestaurantTableEntity> tables = tableRepository.findByRestaurantId(restaurantId);
+        Map<UUID, String> tableNumberMap = tables.stream()
+                .collect(Collectors.toMap(RestaurantTableEntity::getId, RestaurantTableEntity::getTableNumber));
+        return combinations.stream().map(c -> new TableCombinationResponse(
+                c.getId(),
+                c.getRestaurantId(),
+                c.getName(),
+                c.getZone() != null ? c.getZone() : "Main Dining Room",
+                c.getTableIds(),
+                c.getTableIds().stream().map(id -> tableNumberMap.getOrDefault(id, id.toString())).toList(),
+                c.getCombinedCapacity()
+        )).toList();
+    }
+
+    public TableCombinationResponse toResponse(TableCombinationEntity c) {
+        List<RestaurantTableEntity> tables = tableRepository.findByRestaurantId(c.getRestaurantId());
+        Map<UUID, String> tableNumberMap = tables.stream()
+                .collect(Collectors.toMap(RestaurantTableEntity::getId, RestaurantTableEntity::getTableNumber));
+        return new TableCombinationResponse(
+                c.getId(),
+                c.getRestaurantId(),
+                c.getName(),
+                c.getZone() != null ? c.getZone() : "Main Dining Room",
+                c.getTableIds(),
+                c.getTableIds().stream().map(id -> tableNumberMap.getOrDefault(id, id.toString())).toList(),
+                c.getCombinedCapacity()
+        );
+    }
+
     private void publishTableConfigurationEvent(UUID restaurantId) {
         try {
             List<RestaurantTableEntity> tables = tableRepository.findByRestaurantId(restaurantId);
@@ -291,7 +415,9 @@ public class RestaurantService {
                     .map(t -> new TableConfigurationChangedEvent.TableConfig(t.getId(), t.getTableNumber(), t.getCapacity(), t.getZone()))
                     .toList();
             List<TableConfigurationChangedEvent.CombinationConfig> combConfigs = combinations.stream()
-                    .map(c -> new TableConfigurationChangedEvent.CombinationConfig(c.getId(), c.getName(), c.getTableIds(), c.getCombinedCapacity()))
+                    .map(c -> new TableConfigurationChangedEvent.CombinationConfig(
+                            c.getId(), c.getName(), c.getZone() != null ? c.getZone() : "Main Dining Room", c.getTableIds(), c.getCombinedCapacity()
+                    ))
                     .toList();
 
             TableConfigurationChangedEvent event = new TableConfigurationChangedEvent(
