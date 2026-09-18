@@ -5,16 +5,15 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
+import nl.invokedynamic.demo.availability.api.dto.AvailabilityQuery;
 import nl.invokedynamic.demo.availability.service.AvailabilityService;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -45,30 +44,17 @@ public class AvailabilityController {
         try {
             return ResponseEntity.ok(availabilityService.checkAvailability(query.restaurantId(), query.date(), query.time(), partySize));
         } catch (IllegalArgumentException e) {
-            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
-            pd.setType(URI.create("https://example.invalid/problems/not-found"));
-            pd.setTitle("Resource Not Found");
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+            String msg = e.getMessage() != null ? e.getMessage() : "Invalid argument";
+            boolean isNotFound = msg.toLowerCase().contains("not found");
+            HttpStatus status = isNotFound ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, msg);
+            pd.setType(URI.create(isNotFound ? "https://example.invalid/problems/not-found" : "https://example.invalid/problems/validation-error"));
+            pd.setTitle(isNotFound ? "Resource Not Found" : "Validation Failed");
+            if (!isNotFound) {
+                String paramName = msg.toLowerCase().contains("date") ? "date" : "time";
+                pd.setProperty("invalidParams", List.of(Map.of("name", paramName, "reason", msg)));
+            }
+            return ResponseEntity.status(status).body(pd);
         }
     }
-
-    public record AvailabilityQuery(
-            @NotNull
-            @Parameter(description = "Restaurant UUID", required = true)
-            UUID restaurantId,
-
-            @NotNull
-            @Parameter(description = "Date of dining (YYYY-MM-DD)", required = true)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate date,
-
-            @NotNull
-            @Parameter(description = "Time of dining (HH:mm:ss)", required = true)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.TIME)
-            LocalTime time,
-
-            @Min(1) @Max(50)
-            @Parameter(description = "Number of guests in party (1-50)")
-            Integer partySize
-    ) {}
 }

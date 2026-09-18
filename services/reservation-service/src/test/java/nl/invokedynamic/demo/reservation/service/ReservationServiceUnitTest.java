@@ -34,7 +34,7 @@ class ReservationServiceUnitTest {
     @BeforeEach
     void setUp() {
         service = new ReservationService(
-                reservationRepository, allocationRepository, outboxRepository, allocationEngine, objectMapper
+                reservationRepository, allocationRepository, outboxRepository, allocationEngine, objectMapper, null
         );
     }
 

@@ -207,6 +207,20 @@ class WaitingListSecurityTest {
             MockHttpServletResponse mgrAcceptRes = new MockHttpServletResponse();
             filterChainProxy.doFilter(mgrAcceptReq, mgrAcceptRes, new MockFilterChain());
             assertThat(mgrAcceptRes.getStatus()).isEqualTo(403);
+
+            // 5. Manager CAN query waiting list -> 200 / not 401, 403
+            MockHttpServletRequest mgrGetReq = new MockHttpServletRequest("GET", "/api/v1/waiting-list");
+            mgrGetReq.addHeader("Authorization", "Bearer manager-token");
+            MockHttpServletResponse mgrGetRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(mgrGetReq, mgrGetRes, new MockFilterChain());
+            assertThat(mgrGetRes.getStatus()).isNotIn(401, 403);
+
+            // 6. Customer CAN query waiting list
+            MockHttpServletRequest custGetReq = new MockHttpServletRequest("GET", "/api/v1/waiting-list");
+            custGetReq.addHeader("Authorization", "Bearer customer-token");
+            MockHttpServletResponse custGetRes = new MockHttpServletResponse();
+            filterChainProxy.doFilter(custGetReq, custGetRes, new MockFilterChain());
+            assertThat(custGetRes.getStatus()).isNotIn(401, 403);
         });
     }
 }

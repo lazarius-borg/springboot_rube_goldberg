@@ -1,6 +1,5 @@
 package nl.invokedynamic.demo.restaurant.api;
 
-import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;

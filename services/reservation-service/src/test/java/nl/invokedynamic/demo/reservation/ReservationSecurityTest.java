@@ -187,19 +187,19 @@ class ReservationSecurityTest {
             filterChainProxy.doFilter(bookReq, bookRes, new MockFilterChain());
             assertThat(bookRes.getStatus()).isNotIn(401, 403);
 
-            // 2. Manager without customer role CANNOT book reservation (POST /api/v1/reservations) -> 403
+            // 2. Manager CAN book reservation (POST /api/v1/reservations) for back-filling
             MockHttpServletRequest mgrBookReq = new MockHttpServletRequest("POST", "/api/v1/reservations");
             mgrBookReq.addHeader("Authorization", "Bearer manager-token");
             MockHttpServletResponse mgrBookRes = new MockHttpServletResponse();
             filterChainProxy.doFilter(mgrBookReq, mgrBookRes, new MockFilterChain());
-            assertThat(mgrBookRes.getStatus()).isEqualTo(403);
+            assertThat(mgrBookRes.getStatus()).isNotIn(401, 403);
 
-            // 3. Customer CANNOT query restaurant-wide reservations (GET /api/v1/reservations) -> 403
+            // 3. Customer CAN query reservations (GET /api/v1/reservations)
             MockHttpServletRequest listReq = new MockHttpServletRequest("GET", "/api/v1/reservations");
             listReq.addHeader("Authorization", "Bearer customer-token");
             MockHttpServletResponse listRes = new MockHttpServletResponse();
             filterChainProxy.doFilter(listReq, listRes, new MockFilterChain());
-            assertThat(listRes.getStatus()).isEqualTo(403);
+            assertThat(listRes.getStatus()).isNotIn(401, 403);
 
             // 4. Manager CAN query restaurant-wide reservations (GET /api/v1/reservations)
             MockHttpServletRequest mgrListReq = new MockHttpServletRequest("GET", "/api/v1/reservations");

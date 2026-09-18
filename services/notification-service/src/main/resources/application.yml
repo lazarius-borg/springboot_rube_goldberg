@@ -40,6 +40,11 @@ spring:
       observation-enabled: true
     listener:
       observation-enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/rube-goldberg}
 
 management:
   endpoints:

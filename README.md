@@ -188,20 +188,24 @@ This is the recommended workflow when developing or debugging individual microse
 ---
 
 ### Option B: Full-Stack Docker Compose (Infrastructure + All Microservices)
-Run the entire platform including all 8 microservices and frontend portals in Docker.
+Run the entire platform including all 8 microservices and frontend portals in Docker. Container images are built directly into the local Docker daemon using Google Jib (`jib-maven-plugin`) without requiring Dockerfiles:
 
-> [!IMPORTANT]
-> The service Dockerfiles copy the pre-built Spring Boot executable JARs from each module's `target/` directory (e.g. `services/restaurant-service/target/restaurant-service-1.0.0-SNAPSHOT.jar`). Therefore, you **must package the Maven artifacts first** before invoking `docker compose` to build the container images:
-
-1. **Package All Microservices (Build Executable JARs)**:
+1. **Build Container Images with Jib**:
    ```bash
-   ./mvnw clean package -DskipTests
+   ./mvnw package jib:dockerBuild -DskipTests
    ```
-   *(Or `./mvnw clean package` to run all unit and slice tests during the packaging).*
+   *(Or `./mvnw package jib:dockerBuild` to run all unit and slice tests during the build).*  
+   This compiles all modules, packages project dependencies, and builds container images directly into the local Docker daemon (`springboot-rube-goldberg/<service>:latest` and `:1.0.0-SNAPSHOT`) for all 8 microservices. Non-runnable modules (root POM and `common/event-contracts`) are automatically skipped or bundled as dependencies.
 
-2. **Build Container Images and Start Full Stack**:
+   > [!TIP]
+   > **Native Host Architecture Support**: Jib automatically detects the host architecture (building native `arm64` on Apple Silicon / ARM64 machines and `amd64` on x86_64 / Intel hosts), eliminating Docker platform mismatch warnings and emulation overhead. You can explicitly override the target architecture if needed:
+   > ```bash
+   > ./mvnw package jib:dockerBuild -DskipTests -Djib.target.architecture=amd64
+   > ```
+
+2. **Start Full Stack**:
    ```bash
-   docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.apps.yml up --build -d
+   docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.apps.yml up -d
    ```
 
 3. **Check Running Containers**:
@@ -695,11 +699,19 @@ curl -s -X POST "http://localhost:9200/ss4o_traces-*/_search" \
 
 ---
 
-### 🖥️ OpenSearch Dashboards (Visual Exploration)
+### 🖥️ OpenSearch Dashboards (Automated Provisioning & Visual Exploration)
 
-OpenSearch Dashboards is accessible at **`http://localhost:5601`**:
-1. **Log Discovery**: Navigate to **Management** &rarr; **Index Patterns** &rarr; Create Index Pattern `otel-logs*` (time field: `timestamp`). View real-time log streams with search filters for `serviceName`, `severity`, and `traceId`.
-2. **Trace Analytics**: Navigate to **Trace Analytics** to visualize end-to-end service dependency maps, latency percentiles (p50, p95, p99), and span waterfall timelines.
-3. **Grafana Dashboards**: Access pre-provisioned operational metrics at `http://localhost:3000` (Admin: `admin` / `admin`).
-4. **Prometheus Metrics**: Query raw scraped metrics at `http://localhost:9090`.
-5. **Alertmanager Rules**: Defined in `infrastructure/prometheus/alert-rules.yml` for automated error rate and downtime alerts.
+OpenSearch Dashboards is accessible at **`http://localhost:5601`**. All dashboards, index patterns, and visualizations are **automatically provisioned** on container startup with zero manual configuration required:
+
+1. **Default Landing Experience**: Navigating to `http://localhost:5601` immediately routes directly to the **Application Logs Dashboard** with a pre-configured 15-minute rolling window and 10-second auto-refresh for live-tail log monitoring.
+2. **Pre-Provisioned Observability Dashboards**:
+   - **Platform Observability Overview**: High-level platform health, log volume trends, trace throughput, severity breakdowns, and error status distributions.
+   - **Application Logs Dashboard**: Deep microservice log exploration, severity breakdown donut, logs by service chart, and an interactive log stream table with expandable JSON details.
+   - **Distributed Traces Dashboard**: Trace span volume over time, operation status breakdown (OK vs ERROR), span latency distribution (ms), and recent trace spans table.
+3. **Pre-Configured Index Patterns**:
+   - `otel-logs*` (time field: `timestamp`)
+   - `ss4o_traces-*` (time field: `startTime`)
+4. **Grafana Dashboards**: Access pre-provisioned operational metrics at `http://localhost:3000` (Admin: `admin` / `admin`).
+5. **Prometheus Metrics**: Query raw scraped metrics at `http://localhost:9090`.
+6. **Alertmanager Rules**: Defined in `infrastructure/prometheus/alert-rules.yml` for automated error rate and downtime alerts.
+

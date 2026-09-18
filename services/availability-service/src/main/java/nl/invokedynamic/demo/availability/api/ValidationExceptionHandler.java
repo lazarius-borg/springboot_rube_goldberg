@@ -86,12 +86,21 @@ public class ValidationExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ProblemDetail> handleIllegalArgument(IllegalArgumentException ex) {
-        HttpStatus status = ex.getMessage() != null && ex.getMessage().toLowerCase().contains("not found")
-                ? HttpStatus.NOT_FOUND
-                : HttpStatus.BAD_REQUEST;
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
-        pd.setType(URI.create(status == HttpStatus.NOT_FOUND ? "https://example.invalid/problems/not-found" : "https://example.invalid/problems/validation-error"));
-        pd.setTitle(status == HttpStatus.NOT_FOUND ? "Resource Not Found" : "Invalid Argument");
+        String msg = ex.getMessage() != null ? ex.getMessage() : "Invalid argument";
+        boolean isNotFound = msg.toLowerCase().contains("not found");
+        HttpStatus status = isNotFound ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(status, msg);
+        pd.setType(URI.create(isNotFound ? "https://example.invalid/problems/not-found" : "https://example.invalid/problems/validation-error"));
+        pd.setTitle(isNotFound ? "Resource Not Found" : "Validation Failed");
+
+        if (!isNotFound) {
+            String paramName = "time";
+            if (msg.toLowerCase().contains("date")) {
+                paramName = "date";
+            }
+            pd.setProperty("invalidParams", List.of(Map.of("name", paramName, "reason", msg)));
+        }
+
         return ResponseEntity.status(status).body(pd);
     }
 }

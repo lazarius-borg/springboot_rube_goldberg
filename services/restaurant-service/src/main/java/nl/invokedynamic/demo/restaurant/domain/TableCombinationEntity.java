@@ -19,6 +19,9 @@ public class TableCombinationEntity {
     @Column(nullable = false, length = 50)
     private String name;
 
+    @Column(length = 50)
+    private String zone;
+
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "table_ids", nullable = false, columnDefinition = "uuid[]")
     private List<UUID> tableIds;
@@ -29,9 +32,14 @@ public class TableCombinationEntity {
     public TableCombinationEntity() {}
 
     public TableCombinationEntity(UUID id, UUID restaurantId, String name, List<UUID> tableIds, int combinedCapacity) {
+        this(id, restaurantId, name, "Main Dining", tableIds, combinedCapacity);
+    }
+
+    public TableCombinationEntity(UUID id, UUID restaurantId, String name, String zone, List<UUID> tableIds, int combinedCapacity) {
         this.id = id;
         this.restaurantId = restaurantId;
         this.name = name;
+        this.zone = zone;
         this.tableIds = tableIds;
         this.combinedCapacity = combinedCapacity;
     }
@@ -39,6 +47,10 @@ public class TableCombinationEntity {
     public UUID getId() { return id; }
     public UUID getRestaurantId() { return restaurantId; }
     public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public String getZone() { return zone; }
+    public void setZone(String zone) { this.zone = zone; }
     public List<UUID> getTableIds() { return tableIds; }
     public int getCombinedCapacity() { return combinedCapacity; }
+    public void setCombinedCapacity(int combinedCapacity) { this.combinedCapacity = combinedCapacity; }
 }

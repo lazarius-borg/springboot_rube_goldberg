@@ -1,0 +1,183 @@
+openapi: 3.0.3
+info:
+  title: Restaurant Service - Table Combinations API
+  description: Endpoints for managing and querying configurable table combinations in the restaurant management domain.
+  version: 1.0.0
+paths:
+  /api/v1/restaurants/{restaurantId}/table-combinations:
+    get:
+      summary: List all table combinations for a restaurant
+      description: Returns all configured table combinations including member table details, zone, and capacity.
+      parameters:
+        - name: restaurantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of table combinations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TableCombinationResponse'
+        '404':
+          description: Restaurant not found
+    post:
+      summary: Create a new table combination
+      description: Creates a combination of two or more physical tables in the same zone.
+      parameters:
+        - name: restaurantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCombinationRequest'
+      responses:
+        '201':
+          description: Combination created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableCombinationResponse'
+        '400':
+          description: Validation error (cross-zone, duplicate combination, invalid table count, capacity exceeds sum)
+        '404':
+          description: Restaurant or constituent table not found
+
+  /api/v1/restaurants/{restaurantId}/table-combinations/{combinationId}:
+    put:
+      summary: Update a table combination
+      description: Updates the name and/or combined capacity of an existing table combination. Custom capacity cannot exceed member table sum.
+      parameters:
+        - name: restaurantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: combinationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCombinationRequest'
+      responses:
+        '200':
+          description: Combination updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableCombinationResponse'
+        '400':
+          description: Validation error (e.g. capacity exceeds sum of member tables)
+        '404':
+          description: Combination or restaurant not found
+    delete:
+      summary: Delete a table combination
+      description: Deletes an existing table combination. Unpublishes it from future availability searches without affecting existing confirmed reservations.
+      parameters:
+        - name: restaurantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: combinationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Combination successfully deleted
+        '404':
+          description: Combination or restaurant not found
+
+components:
+  schemas:
+    UpdateCombinationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Optional updated name.
+          example: "Combo: T1 + T2 (Window)"
+        combinedCapacity:
+          type: integer
+          minimum: 1
+          description: Optional updated capacity. Cannot exceed sum of constituent table capacities.
+          example: 6
+    CreateCombinationRequest:
+      type: object
+      required:
+        - tableIds
+      properties:
+        name:
+          type: string
+          description: Optional name. If omitted, auto-generated from member table numbers (e.g. "Combo: T1 + T2").
+          example: "Combo: T1 + T2"
+        tableIds:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            format: uuid
+          description: List of constituent physical table IDs (minimum 2). Must reside in the same zone.
+        combinedCapacity:
+          type: integer
+          minimum: 1
+          description: Optional combined seating capacity. Defaults to the exact sum of constituent table capacities. Cannot exceed the sum.
+          example: 8
+
+    TableCombinationResponse:
+      type: object
+      required:
+        - id
+        - restaurantId
+        - name
+        - zone
+        - tableIds
+        - combinedCapacity
+      properties:
+        id:
+          type: string
+          format: uuid
+        restaurantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Combo: T1 + T2"
+        zone:
+          type: string
+          example: "Main Dining Room"
+        tableIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tableNumbers:
+          type: array
+          items:
+            type: string
+          example: ["T1", "T2"]
+        combinedCapacity:
+          type: integer
+          example: 8

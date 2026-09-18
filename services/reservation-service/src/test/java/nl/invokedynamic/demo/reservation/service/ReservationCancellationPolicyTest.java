@@ -21,7 +21,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,7 +37,7 @@ class ReservationCancellationPolicyTest {
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         reservationService = new ReservationService(
-                reservationRepository, allocationRepository, outboxRepository, allocationEngine, objectMapper
+                reservationRepository, allocationRepository, outboxRepository, allocationEngine, objectMapper, null
         );
     }
 

@@ -8,6 +8,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import nl.invokedynamic.demo.restaurant.api.dto.CreateCombinationRequest;
+import nl.invokedynamic.demo.restaurant.api.dto.CreateRestaurantRequest;
+import nl.invokedynamic.demo.restaurant.api.dto.CreateTableRequest;
+import nl.invokedynamic.demo.restaurant.api.dto.OpeningHoursConfigDto;
+import nl.invokedynamic.demo.restaurant.api.dto.TableCombinationResponse;
+import nl.invokedynamic.demo.restaurant.api.dto.UpdateCombinationRequest;
+import nl.invokedynamic.demo.restaurant.api.dto.UpdateRestaurantSettingsRequest;
+import nl.invokedynamic.demo.restaurant.api.dto.UpdateTableRequest;
 import nl.invokedynamic.demo.restaurant.domain.*;
 import nl.invokedynamic.demo.restaurant.service.RestaurantService;
 import org.springdoc.core.annotations.ParameterObject;
@@ -22,6 +30,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -52,7 +61,9 @@ public class RestaurantController {
         try {
             RestaurantEntity entity = restaurantService.createRestaurant(
                     req.name(), req.address(), req.timezone(),
+                    req.minReservationDurationMinutes() != null ? req.minReservationDurationMinutes() : 45,
                     req.defaultReservationDurationMinutes() != null ? req.defaultReservationDurationMinutes() : 90,
+                    req.maxReservationDurationMinutes() != null ? req.maxReservationDurationMinutes() : 180,
                     req.minBookingAdvanceMinutes() != null ? req.minBookingAdvanceMinutes() : 30,
                     req.maxBookingHorizonDays() != null ? req.maxBookingHorizonDays() : 60,
                     req.cancellationWindowHours() != null ? req.cancellationWindowHours() : 2
@@ -62,6 +73,28 @@ public class RestaurantController {
             ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
             pd.setType(URI.create("https://example.invalid/problems/invalid-restaurant"));
             pd.setTitle("Invalid Restaurant Data");
+            return ResponseEntity.badRequest().body(pd);
+        }
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Update establishment settings", description = "Updates restaurant configuration settings while preserving existing confirmed reservations.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Restaurant settings updated"),
+            @ApiResponse(responseCode = "400", description = "Invalid settings data"),
+            @ApiResponse(responseCode = "404", description = "Restaurant not found")
+    })
+    public ResponseEntity<?> updateRestaurantSettings(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateRestaurantSettingsRequest req) {
+        try {
+            RestaurantEntity entity = restaurantService.updateRestaurantSettings(id, req);
+            return ResponseEntity.ok(entity);
+        } catch (NoSuchElementException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+        } catch (IllegalArgumentException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
             return ResponseEntity.badRequest().body(pd);
         }
     }
@@ -90,11 +123,58 @@ public class RestaurantController {
     })
     public ResponseEntity<?> addTable(@PathVariable UUID id, @Valid @RequestBody CreateTableRequest req) {
         try {
-            RestaurantTableEntity table = restaurantService.addTable(id, req.tableNumber(), req.capacity() != null ? req.capacity() : 2);
+            RestaurantTableEntity table = restaurantService.addTable(id, req.tableNumber(), req.capacity() != null ? req.capacity() : 2, req.zone());
             return ResponseEntity.status(HttpStatus.CREATED).body(table);
         } catch (IllegalArgumentException e) {
             ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
             return ResponseEntity.badRequest().body(pd);
+        }
+    }
+
+    @PutMapping("/{id}/tables/{tableId}")
+    @Operation(summary = "Update restaurant table", description = "Updates table label, seating capacity, or floor zone.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Table updated successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid table data"),
+            @ApiResponse(responseCode = "404", description = "Table not found")
+    })
+    public ResponseEntity<?> updateTable(
+            @PathVariable UUID id,
+            @PathVariable UUID tableId,
+            @Valid @RequestBody UpdateTableRequest req) {
+        try {
+            RestaurantTableEntity updated = restaurantService.updateTable(id, tableId, req.tableNumber(), req.capacity(), req.zone());
+            return ResponseEntity.ok(updated);
+        } catch (NoSuchElementException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+        } catch (IllegalArgumentException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+            return ResponseEntity.badRequest().body(pd);
+        }
+    }
+
+    @DeleteMapping("/{id}/tables/{tableId}")
+    @Operation(summary = "Delete restaurant table", description = "Safely deletes an unused table; rejects deletion if allocated to active upcoming reservations.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Table deleted successfully"),
+            @ApiResponse(responseCode = "404", description = "Table not found"),
+            @ApiResponse(responseCode = "409", description = "Table has active upcoming reservations")
+    })
+    public ResponseEntity<?> deleteTable(
+            @PathVariable UUID id,
+            @PathVariable UUID tableId) {
+        try {
+            restaurantService.deleteTable(id, tableId);
+            return ResponseEntity.noContent().build();
+        } catch (NoSuchElementException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+        } catch (IllegalStateException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+            pd.setType(URI.create("https://example.invalid/problems/table-has-active-reservations"));
+            pd.setTitle("Table Allocation Conflict");
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(pd);
         }
     }
 
@@ -106,9 +186,49 @@ public class RestaurantController {
 
     @PostMapping("/{id}/table-combinations")
     @Operation(summary = "Define combinable tables", description = "Creates a combined table configuration from multiple existing tables.")
-    public ResponseEntity<TableCombinationEntity> addCombination(@PathVariable UUID id, @Valid @RequestBody CreateCombinationRequest req) {
-        TableCombinationEntity comb = restaurantService.addTableCombination(id, req.name(), req.tableIds());
-        return ResponseEntity.status(HttpStatus.CREATED).body(comb);
+    public ResponseEntity<?> addCombination(@PathVariable UUID id, @Valid @RequestBody CreateCombinationRequest req) {
+        try {
+            TableCombinationEntity comb = restaurantService.addTableCombination(id, req.name(), req.tableIds(), req.combinedCapacity());
+            return ResponseEntity.status(HttpStatus.CREATED).body(restaurantService.toResponse(comb));
+        } catch (IllegalArgumentException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+            return ResponseEntity.badRequest().body(pd);
+        }
+    }
+
+    @GetMapping("/{id}/table-combinations")
+    @Operation(summary = "List table combinations", description = "Retrieves all active table combinations configured for the restaurant.")
+    public ResponseEntity<List<TableCombinationResponse>> getTableCombinations(@PathVariable UUID id) {
+        return ResponseEntity.ok(restaurantService.getTableCombinationResponses(id));
+    }
+
+    @PutMapping("/{id}/table-combinations/{combinationId}")
+    @Operation(summary = "Update table combination", description = "Updates name and/or capacity of an existing table combination.")
+    public ResponseEntity<?> updateTableCombination(
+            @PathVariable UUID id,
+            @PathVariable UUID combinationId,
+            @Valid @RequestBody UpdateCombinationRequest req) {
+        try {
+            TableCombinationEntity updated = restaurantService.updateTableCombination(id, combinationId, req.name(), req.combinedCapacity());
+            return ResponseEntity.ok(restaurantService.toResponse(updated));
+        } catch (NoSuchElementException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(pd);
+        } catch (IllegalArgumentException e) {
+            ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+            return ResponseEntity.badRequest().body(pd);
+        }
+    }
+
+    @DeleteMapping("/{id}/table-combinations/{combinationId}")
+    @Operation(summary = "Delete table combination", description = "Deletes a table combination, unpublishing it from future bookings.")
+    public ResponseEntity<Void> deleteTableCombination(@PathVariable UUID id, @PathVariable UUID combinationId) {
+        try {
+            restaurantService.deleteTableCombination(id, combinationId);
+            return ResponseEntity.noContent().build();
+        } catch (java.util.NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PutMapping("/{id}/opening-hours")
@@ -125,94 +245,5 @@ public class RestaurantController {
     @Operation(summary = "Get opening hours schedule")
     public ResponseEntity<List<OpeningHoursEntity>> getOpeningHours(@PathVariable UUID id) {
         return ResponseEntity.ok(restaurantService.getOpeningHours(id));
-    }
-
-    public record CreateRestaurantRequest(
-            @NotBlank @Size(max = 150)
-            @Schema(description = "Restaurant trade name", example = "The Bistro", maxLength = 150)
-            String name,
-
-            @NotBlank @Size(max = 1000)
-            @Schema(description = "Physical address", example = "123 Main St, Amsterdam", maxLength = 1000)
-            String address,
-
-            @NotBlank @Size(max = 50)
-            @Schema(description = "IANA Timezone identifier", example = "Europe/Amsterdam", maxLength = 50)
-            String timezone,
-
-            @Min(15) @Max(480)
-            @Schema(description = "Default reservation duration in minutes (15-480)", example = "90", minimum = "15", maximum = "480", defaultValue = "90")
-            Integer defaultReservationDurationMinutes,
-
-            @Min(0) @Max(10080)
-            @Schema(description = "Minimum booking advance lead time in minutes (0-10080)", example = "30", minimum = "0", maximum = "10080", defaultValue = "30")
-            Integer minBookingAdvanceMinutes,
-
-            @Min(1) @Max(365)
-            @Schema(description = "Maximum forward booking horizon in days (1-365)", example = "60", minimum = "1", maximum = "365", defaultValue = "60")
-            Integer maxBookingHorizonDays,
-
-            @Min(0) @Max(168)
-            @Schema(description = "Authoritative cancellation window notice in hours (0-168)", example = "2", minimum = "0", maximum = "168", defaultValue = "2")
-            Integer cancellationWindowHours
-    ) {}
-
-    public record CreateTableRequest(
-            @NotBlank @Size(max = 50)
-            @Schema(description = "Table identifier or number", example = "T1", maxLength = 50)
-            String tableNumber,
-
-            @NotNull @Min(1) @Max(50)
-            @Schema(description = "Physical seating capacity (1-50)", example = "4", minimum = "1", maximum = "50")
-            Integer capacity
-    ) {}
-
-    public record CreateCombinationRequest(
-            @NotBlank @Size(max = 100)
-            @Schema(description = "Table combination identifier", example = "Party Hall 1", maxLength = 100)
-            String name,
-
-            @NotEmpty @Size(min = 2, max = 10)
-            @Schema(description = "Distinct table IDs composing the combination (min 2, max 10)")
-            List<UUID> tableIds
-    ) {
-        @AssertTrue(message = "Table combination must contain at least 2 distinct table identifiers")
-        public boolean isTableIds() {
-            return tableIds != null && tableIds.stream().distinct().count() == tableIds.size();
-        }
-    }
-
-    public record OpeningHoursConfigDto(
-            @NotEmpty
-            @Schema(description = "List of opening schedule items")
-            List<@Valid ScheduleItemDto> schedules
-    ) {}
-
-    public record ScheduleItemDto(
-            @Min(1) @Max(7)
-            @Schema(description = "Day of week (1 = Monday, 7 = Sunday)", minimum = "1", maximum = "7")
-            Integer dayOfWeek,
-
-            @Schema(description = "Specific calendar date for holiday/exception schedules")
-            LocalDate specificDate,
-
-            @NotNull
-            @Schema(description = "Daily opening time", example = "09:00:00")
-            LocalTime openTime,
-
-            @NotNull
-            @Schema(description = "Daily closing time", example = "22:00:00")
-            LocalTime closeTime,
-
-            @Schema(description = "Whether the establishment is closed on this schedule day")
-            boolean isClosed
-    ) {
-        @AssertTrue(message = "Close time must be strictly after open time for non-closed days")
-        public boolean isCloseTime() {
-            if (isClosed) {
-                return true;
-            }
-            return openTime != null && closeTime != null && closeTime.isAfter(openTime);
-        }
     }
 }

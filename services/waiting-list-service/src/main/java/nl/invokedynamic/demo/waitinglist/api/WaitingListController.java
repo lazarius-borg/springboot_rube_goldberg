@@ -2,12 +2,11 @@ package nl.invokedynamic.demo.waitinglist.api;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
+import nl.invokedynamic.demo.waitinglist.api.dto.JoinWaitingListRequest;
 import nl.invokedynamic.demo.waitinglist.domain.WaitingListEntryEntity;
 import nl.invokedynamic.demo.waitinglist.domain.WaitingListOfferEntity;
 import nl.invokedynamic.demo.waitinglist.service.WaitingListService;
@@ -18,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +29,35 @@ public class WaitingListController {
 
     public WaitingListController(WaitingListService waitingListService) {
         this.waitingListService = waitingListService;
+    }
+
+    @GetMapping
+    @Operation(summary = "Get waiting list entries", description = "Inspection of fair FIFO queue for a restaurant or customer.")
+    @ApiResponse(responseCode = "200", description = "Waiting list entries retrieved")
+    public ResponseEntity<?> getWaitingList(
+            @Parameter(description = "Restaurant UUID") @RequestParam(required = false) UUID restaurantId,
+            @Parameter(description = "Customer UUID") @RequestParam(required = false) UUID customerId,
+            @Parameter(description = "Target dining date") @RequestParam(required = false) LocalDate targetDate,
+            @Parameter(description = "Entry status filter") @RequestParam(required = false) String status) {
+        if (customerId != null) {
+            return ResponseEntity.ok(waitingListService.getWaitingListByCustomer(customerId));
+        }
+        if (restaurantId != null) {
+            List<WaitingListEntryEntity> entries = waitingListService.getWaitingList(restaurantId, targetDate, status);
+            return ResponseEntity.ok(entries);
+        }
+        return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Either restaurantId or customerId must be provided"));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Leave waiting list", description = "Cancels active waiting list placement.")
+    public ResponseEntity<?> leaveWaitingList(@Parameter(description = "Waiting list entry UUID") @PathVariable UUID id) {
+        try {
+            WaitingListEntryEntity cancelled = waitingListService.cancelWaitingListEntry(id);
+            return ResponseEntity.ok(cancelled);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage()));
+        }
     }
 
     @PostMapping
@@ -59,51 +87,6 @@ public class WaitingListController {
             ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.GONE, e.getMessage());
             pd.setType(URI.create("https://example.invalid/problems/offer-expired"));
             return ResponseEntity.status(HttpStatus.GONE).body(pd);
-        }
-    }
-
-    public record JoinWaitingListRequest(
-            @NotNull
-            @Schema(description = "Restaurant UUID", requiredMode = Schema.RequiredMode.REQUIRED)
-            UUID restaurantId,
-
-            @Schema(description = "Customer UUID")
-            UUID customerId,
-
-            @NotBlank @Email @Size(max = 255)
-            @Schema(description = "Customer contact email", example = "customer@example.com", maxLength = 255, requiredMode = Schema.RequiredMode.REQUIRED)
-            String customerEmail,
-
-            @NotNull
-            @Schema(description = "Requested dining date (must be current or future)", example = "2026-09-20", requiredMode = Schema.RequiredMode.REQUIRED)
-            LocalDate targetDate,
-
-            @NotNull
-            @Schema(description = "Earliest acceptable seating time", example = "18:00:00", requiredMode = Schema.RequiredMode.REQUIRED)
-            LocalTime earliestTime,
-
-            @NotNull
-            @Schema(description = "Latest acceptable seating time", example = "21:00:00", requiredMode = Schema.RequiredMode.REQUIRED)
-            LocalTime latestTime,
-
-            @Min(1) @Max(50)
-            @Schema(description = "Party size between 1 and 50 guests", example = "4", minimum = "1", maximum = "50", requiredMode = Schema.RequiredMode.REQUIRED)
-            int partySize
-    ) {
-        @AssertTrue(message = "Target date must be current or future")
-        public boolean isTargetDate() {
-            if (targetDate == null) {
-                return false;
-            }
-            // Allow tests using baseline fixed future dates like 2026-09-01
-            LocalDate baseline = LocalDate.of(2026, 9, 1);
-            LocalDate reference = LocalDate.now().isBefore(baseline) ? LocalDate.now() : baseline;
-            return !targetDate.isBefore(reference);
-        }
-
-        @AssertTrue(message = "Earliest time must be before or equal to latest time")
-        public boolean isEarliestTime() {
-            return earliestTime != null && latestTime != null && !earliestTime.isAfter(latestTime);
         }
     }
 }

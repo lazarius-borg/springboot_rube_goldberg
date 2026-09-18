@@ -10,6 +10,9 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import nl.invokedynamic.demo.reservation.api.dto.CreateReservationRequest;
+import nl.invokedynamic.demo.reservation.api.dto.ReservationResponseDto;
+import nl.invokedynamic.demo.reservation.api.dto.UpdateStatusRequest;
 import nl.invokedynamic.demo.reservation.domain.ReservationEntity;
 import nl.invokedynamic.demo.reservation.domain.ReservationStatus;
 import nl.invokedynamic.demo.reservation.domain.TableAllocationEngine;
@@ -27,10 +30,8 @@ import org.springframework.web.bind.annotation.*;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/reservations")
@@ -53,16 +54,14 @@ public class ReservationController {
     public ResponseEntity<?> createReservation(@Valid @RequestBody CreateReservationRequest req) {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            boolean isCustomer = auth != null && auth.getAuthorities() != null && auth.getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
             boolean isManagerOrAdmin = auth != null && auth.getAuthorities() != null && auth.getAuthorities().stream()
                     .anyMatch(a -> a.getAuthority().equals("ROLE_RESTAURANT_MANAGER") || a.getAuthority().equals("ROLE_ADMIN"));
 
             Instant now = Instant.now();
             Instant startTime = req.startTime() != null ? req.startTime() : now;
 
-            if (isCustomer && !isManagerOrAdmin) {
-                // Customer booking: enforce current/future with 5-minute clock-skew grace period and max 365 days
+            if (!isManagerOrAdmin) {
+                // Customer or unauthenticated: enforce current/future with 5-minute clock-skew grace period and max 365 days
                 if (startTime.isBefore(now.minusSeconds(300))) {
                     throw new IllegalArgumentException("Reservation start time cannot be in the past");
                 }
@@ -74,9 +73,8 @@ public class ReservationController {
             int partySize = req.partySize() != null ? req.partySize() : 2;
             int durationMinutes = req.durationMinutes() != null && req.durationMinutes() > 0 ? req.durationMinutes() : 90;
 
-            List<TableAllocationEngine.TableCandidate> tables = req.availableTables() != null ? req.availableTables() :
-                    List.of(new TableAllocationEngine.TableCandidate(UUID.randomUUID(), partySize));
-            List<TableAllocationEngine.CombinationCandidate> combinations = req.combinations() != null ? req.combinations() : List.of();
+            List<TableAllocationEngine.TableCandidate> tables = req.availableTables();
+            List<TableAllocationEngine.CombinationCandidate> combinations = req.combinations();
 
             UUID customerId = req.customerId() != null ? req.customerId() : UUID.randomUUID();
             String customerName = req.customerName() != null && !req.customerName().isBlank() ? req.customerName() : "Customer";
@@ -98,10 +96,16 @@ public class ReservationController {
             }
 
             List<UUID> allocated = reservationService.getAllocatedTables(reservation.getId());
+            Map<UUID, String> labelMap = reservationService.getTableLabels(reservation.getRestaurantId());
+            List<String> labels = allocated.stream()
+                    .map(tid -> labelMap.getOrDefault(tid, "T-" + tid.toString().substring(0, 4)))
+                    .toList();
+
             ReservationResponseDto response = new ReservationResponseDto(
                     reservation.getId(), reservation.getRestaurantId(), reservation.getCustomerId(),
                     reservation.getCustomerName(), reservation.getCustomerEmail(), reservation.getPartySize(),
-                    reservation.getStartTime(), reservation.getEndTime(), reservation.getStatus(), allocated
+                    reservation.getStartTime(), reservation.getEndTime(), reservation.getStatus(), allocated,
+                    labels, reservation.getCancellationReason()
             );
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (IllegalStateException e) {
@@ -129,10 +133,14 @@ public class ReservationController {
         if (opt.isPresent()) {
             ReservationEntity res = opt.get();
             List<UUID> allocated = reservationService.getAllocatedTables(id);
+            Map<UUID, String> labelMap = reservationService.getTableLabels(res.getRestaurantId());
+            List<String> labels = allocated.stream()
+                    .map(tid -> labelMap.getOrDefault(tid, "T-" + tid.toString().substring(0, 4)))
+                    .toList();
             return ResponseEntity.ok(new ReservationResponseDto(
                     res.getId(), res.getRestaurantId(), res.getCustomerId(), res.getCustomerName(),
                     res.getCustomerEmail(), res.getPartySize(), res.getStartTime(), res.getEndTime(),
-                    res.getStatus(), allocated
+                    res.getStatus(), allocated, labels, res.getCancellationReason()
             ));
         }
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Reservation not found: " + id);
@@ -140,11 +148,55 @@ public class ReservationController {
     }
 
     @GetMapping
-    @Operation(summary = "List reservations for restaurant")
-    public ResponseEntity<Page<ReservationEntity>> listReservations(
-            @Parameter(description = "Restaurant UUID") @RequestParam UUID restaurantId,
+    @Operation(summary = "List reservations for restaurant or customer")
+    public ResponseEntity<?> listReservations(
+            @Parameter(description = "Restaurant UUID") @RequestParam(required = false) UUID restaurantId,
+            @Parameter(description = "Customer UUID") @RequestParam(required = false) UUID customerId,
             @ParameterObject Pageable pageable) {
-        return ResponseEntity.ok(reservationService.listReservationsByRestaurant(restaurantId, pageable));
+        if (customerId != null) {
+            Page<ReservationEntity> page = reservationService.listReservationsByCustomer(customerId, pageable);
+            return ResponseEntity.ok(enrichReservationsPage(page));
+        }
+        if (restaurantId != null) {
+            Page<ReservationEntity> page = reservationService.listReservationsByRestaurant(restaurantId, pageable);
+            return ResponseEntity.ok(enrichReservationsPage(page));
+        }
+        return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Either restaurantId or customerId must be provided"));
+    }
+
+    @GetMapping("/tables/{tableId}/has-active")
+    @Operation(summary = "Check if table has active upcoming reservations")
+    public ResponseEntity<Boolean> hasActiveReservations(@PathVariable UUID tableId) {
+        return ResponseEntity.ok(reservationService.hasActiveReservationsForTable(tableId));
+    }
+
+    private Page<ReservationResponseDto> enrichReservationsPage(Page<ReservationEntity> page) {
+        List<ReservationEntity> content = page.getContent();
+        if (content.isEmpty()) {
+            return page.map(r -> null);
+        }
+        List<UUID> resIds = content.stream().map(ReservationEntity::getId).toList();
+        Map<UUID, List<UUID>> allocationMap = reservationService.getAllocatedTablesBatch(resIds);
+
+        // Batch fetch table labels per restaurant to avoid N+1 queries
+        Set<UUID> restIds = content.stream().map(ReservationEntity::getRestaurantId).collect(Collectors.toSet());
+        Map<UUID, Map<UUID, String>> restTableLabels = new HashMap<>();
+        for (UUID rid : restIds) {
+            restTableLabels.put(rid, reservationService.getTableLabels(rid));
+        }
+
+        return page.map(r -> {
+            List<UUID> tables = allocationMap.getOrDefault(r.getId(), List.of());
+            Map<UUID, String> labelMap = restTableLabels.getOrDefault(r.getRestaurantId(), Map.of());
+            List<String> labels = tables.stream()
+                    .map(tid -> labelMap.getOrDefault(tid, "T-" + tid.toString().substring(0, 4)))
+                    .toList();
+            return new ReservationResponseDto(
+                    r.getId(), r.getRestaurantId(), r.getCustomerId(),
+                    r.getCustomerName(), r.getCustomerEmail(), r.getPartySize(),
+                    r.getStartTime(), r.getEndTime(), r.getStatus(), tables, labels, r.getCancellationReason()
+            );
+        });
     }
 
     @DeleteMapping("/{id}")
@@ -178,101 +230,4 @@ public class ReservationController {
             return ResponseEntity.badRequest().body(pd);
         }
     }
-
-    public static class CreateReservationRequest {
-        @NotNull(message = "Restaurant ID is required")
-        @Schema(description = "Restaurant UUID", requiredMode = Schema.RequiredMode.REQUIRED)
-        private final UUID restaurantId;
-
-        @Schema(description = "Customer UUID")
-        private final UUID customerId;
-
-        @Size(max = 200, message = "Customer name cannot exceed 200 characters")
-        @Schema(description = "Customer display name", example = "Alice Smith", maxLength = 200)
-        private final String customerName;
-
-        @Email(message = "Customer email must be a valid email address")
-        @Size(max = 255, message = "Customer email cannot exceed 255 characters")
-        @Schema(description = "Customer email address", example = "alice@example.com", maxLength = 255)
-        private final String customerEmail;
-
-        @Min(value = 1, message = "Party size must be at least 1 guest")
-        @Max(value = 50, message = "Party size cannot exceed 50 guests")
-        @Schema(description = "Party size (1-50 guests)", example = "4", minimum = "1", maximum = "50", defaultValue = "2")
-        private final Integer partySize;
-
-        @Schema(description = "Reservation start timestamp in ISO-8601 format", example = "2026-09-20T19:00:00Z")
-        private final Instant startTime;
-
-        @Min(value = 15, message = "Duration must be at least 15 minutes")
-        @Max(value = 480, message = "Duration cannot exceed 480 minutes (8 hours)")
-        @Schema(description = "Dining duration in minutes (15-480)", example = "90", minimum = "15", maximum = "480", defaultValue = "90")
-        private final Integer durationMinutes;
-
-        @Min(value = 0, message = "Cancellation window hours cannot be negative")
-        @Max(value = 168, message = "Cancellation window hours cannot exceed 168 hours (7 days)")
-        @Schema(description = "Authoritative cancellation window in hours (0-168)", example = "2", minimum = "0", maximum = "168", defaultValue = "2")
-        private final Integer cancellationWindowHours;
-
-        @Schema(description = "Available tables passed by caller/engine")
-        private final List<TableAllocationEngine.TableCandidate> availableTables;
-
-        @Schema(description = "Available table combinations passed by caller/engine")
-        private final List<TableAllocationEngine.CombinationCandidate> combinations;
-
-        @JsonCreator
-        public CreateReservationRequest(
-                @JsonProperty("restaurantId") UUID restaurantId,
-                @JsonProperty("customerId") UUID customerId,
-                @JsonProperty("customerName") String customerName,
-                @JsonProperty("customerEmail") String customerEmail,
-                @JsonProperty("partySize") Integer partySize,
-                @JsonProperty("startTime") Instant startTime,
-                @JsonProperty("durationMinutes") Integer durationMinutes,
-                @JsonProperty("cancellationWindowHours") Integer cancellationWindowHours,
-                @JsonProperty("availableTables") List<TableAllocationEngine.TableCandidate> availableTables,
-                @JsonProperty("combinations") List<TableAllocationEngine.CombinationCandidate> combinations
-        ) {
-            this.restaurantId = restaurantId;
-            this.customerId = customerId;
-            this.customerName = customerName;
-            this.customerEmail = customerEmail;
-            this.partySize = partySize;
-            this.startTime = startTime;
-            this.durationMinutes = durationMinutes;
-            this.cancellationWindowHours = cancellationWindowHours;
-            this.availableTables = availableTables;
-            this.combinations = combinations;
-        }
-
-        public UUID restaurantId() { return restaurantId; }
-        public UUID customerId() { return customerId; }
-        public String customerName() { return customerName; }
-        public String customerEmail() { return customerEmail; }
-        public Integer partySize() { return partySize; }
-        public Instant startTime() { return startTime; }
-        public Integer durationMinutes() { return durationMinutes; }
-        public Integer cancellationWindowHours() { return cancellationWindowHours; }
-        public List<TableAllocationEngine.TableCandidate> availableTables() { return availableTables; }
-        public List<TableAllocationEngine.CombinationCandidate> combinations() { return combinations; }
-    }
-
-    public static class UpdateStatusRequest {
-        @NotNull(message = "Status is required")
-        @Schema(description = "Lifecycle status transition target", example = "ARRIVED", requiredMode = Schema.RequiredMode.REQUIRED)
-        private final ReservationStatus status;
-
-        @JsonCreator
-        public UpdateStatusRequest(@JsonProperty("status") ReservationStatus status) {
-            this.status = status;
-        }
-
-        public ReservationStatus status() { return status; }
-    }
-
-    public record ReservationResponseDto(
-            UUID id, UUID restaurantId, UUID customerId, String customerName,
-            String customerEmail, int partySize, Instant startTime, Instant endTime,
-            String status, List<UUID> allocatedTableIds
-    ) {}
 }

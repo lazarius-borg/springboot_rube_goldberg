@@ -48,9 +48,9 @@ class RestaurantValidationTest {
     void shouldAcceptValidRestaurantRegistration() throws Exception {
         UUID id = UUID.randomUUID();
         RestaurantEntity entity = new RestaurantEntity(
-                id, "Valid Bistro", "123 Main St", "Europe/Amsterdam", 90, 30, 60, 2, "ACTIVE", Instant.now(), Instant.now()
+                id, "Valid Bistro", "123 Main St", "Europe/Amsterdam", 90, 180, 30, 60, 2, "ACTIVE", Instant.now(), Instant.now()
         );
-        when(restaurantService.createRestaurant(anyString(), anyString(), anyString(), anyInt(), anyInt(), anyInt(), anyInt()))
+        when(restaurantService.createRestaurant(anyString(), anyString(), anyString(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt(), anyInt()))
                 .thenReturn(entity);
 
         mockMvc.perform(post("/api/v1/restaurants")

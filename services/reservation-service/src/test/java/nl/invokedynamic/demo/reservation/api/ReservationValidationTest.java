@@ -9,14 +9,20 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -128,5 +134,106 @@ class ReservationValidationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Validation Failed"))
                 .andExpect(jsonPath("$.invalidParams[0].name").value("customerEmail"));
+    }
+
+    @Test
+    void shouldRejectCustomerPastReservation() throws Exception {
+        // Customer or unauthenticated: past timestamp beyond 300s grace window
+        Instant pastTime = Instant.now().minusSeconds(600);
+        mockMvc.perform(post("/api/v1/reservations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(String.format("""
+                    {
+                      "restaurantId": "00000000-0000-0000-0000-000000000001",
+                      "partySize": 2,
+                      "startTime": "%s"
+                    }
+                """, pastTime)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.invalidParams[0].name").value("startTime"))
+                .andExpect(jsonPath("$.invalidParams[0].reason").value("Reservation start time cannot be in the past"));
+    }
+
+    @Test
+    void shouldRejectReservationBeyondHorizon() throws Exception {
+        // Future booking beyond 365 days
+        Instant beyondHorizon = Instant.now().plus(Duration.ofDays(367));
+        mockMvc.perform(post("/api/v1/reservations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(String.format("""
+                    {
+                      "restaurantId": "00000000-0000-0000-0000-000000000001",
+                      "partySize": 2,
+                      "startTime": "%s"
+                    }
+                """, beyondHorizon)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.invalidParams[0].name").value("startTime"))
+                .andExpect(jsonPath("$.invalidParams[0].reason").value("Reservation start time cannot be more than 365 days in advance"));
+    }
+
+    @Test
+    void shouldAcceptCustomerReservationWithinGraceWindow() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID resId = UUID.randomUUID();
+        Instant graceTime = Instant.now().minusSeconds(120); // 2 mins in past, within 5 min grace
+        ReservationEntity res = new ReservationEntity(
+                resId, restId, UUID.randomUUID(), "Customer", "customer@example.com", 2,
+                graceTime, graceTime.plusSeconds(5400), "CONFIRMED", Instant.now(), Instant.now()
+        );
+        when(reservationService.createReservation(any(), any(), any(), any(), anyInt(), any(), anyInt(), any(), any()))
+                .thenReturn(res);
+        when(reservationService.getAllocatedTables(resId)).thenReturn(List.of(UUID.randomUUID()));
+
+        mockMvc.perform(post("/api/v1/reservations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(String.format("""
+                    {
+                      "restaurantId": "%s",
+                      "partySize": 2,
+                      "startTime": "%s"
+                    }
+                """, restId, graceTime)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(resId.toString()));
+    }
+
+    @Test
+    void shouldAllowManagerToBackfillPastReservation() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID resId = UUID.randomUUID();
+        Instant pastTime = Instant.now().minus(Duration.ofDays(30));
+        ReservationEntity res = new ReservationEntity(
+                resId, restId, UUID.randomUUID(), "Backfill Guest", "backfill@example.com", 2,
+                pastTime, pastTime.plusSeconds(5400), "CONFIRMED", Instant.now(), Instant.now()
+        );
+        when(reservationService.createReservation(any(), any(), any(), any(), anyInt(), any(), anyInt(), any(), any()))
+                .thenReturn(res);
+        when(reservationService.getAllocatedTables(resId)).thenReturn(List.of(UUID.randomUUID()));
+
+        // Set security context with ROLE_RESTAURANT_MANAGER
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(new UsernamePasswordAuthenticationToken(
+                "bob", "password", List.of(new SimpleGrantedAuthority("ROLE_RESTAURANT_MANAGER"))
+        ));
+        SecurityContextHolder.setContext(context);
+
+        try {
+            mockMvc.perform(post("/api/v1/reservations")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(String.format("""
+                        {
+                          "restaurantId": "%s",
+                          "partySize": 2,
+                          "startTime": "%s"
+                        }
+                    """, restId, pastTime)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.id").value(resId.toString()));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 }

@@ -35,6 +35,7 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/restaurants/**").hasAnyRole("RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/restaurants/**").hasAnyRole("RESTAURANT_MANAGER", "ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/restaurants/**").hasAnyRole("RESTAURANT_MANAGER", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/restaurants/**").hasAnyRole("CUSTOMER", "RESTAURANT_MANAGER", "ADMIN")
                         .anyRequest().authenticated()
                 )

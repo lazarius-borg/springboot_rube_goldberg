@@ -14,11 +14,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -36,9 +39,10 @@ class WaitingListControllerWebMvcTest {
     @Test
     void shouldJoinWaitingList() throws Exception {
         UUID id = UUID.randomUUID();
+        LocalDate futureDate = LocalDate.now().plusDays(5);
         WaitingListEntryEntity entry = new WaitingListEntryEntity(
                 id, UUID.randomUUID(), UUID.randomUUID(), "bob@example.com",
-                LocalDate.of(2026, 9, 1), LocalTime.of(18, 0), LocalTime.of(21, 0), 4, "WAITING", Instant.now()
+                futureDate, LocalTime.of(18, 0), LocalTime.of(21, 0), 4, "WAITING", Instant.now()
         );
 
         when(waitingListService.joinWaitingList(any(), any(), any(), any(), any(), any(), anyInt()))
@@ -46,16 +50,16 @@ class WaitingListControllerWebMvcTest {
 
         mockMvc.perform(post("/api/v1/waiting-list")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(String.format("""
                     {
                       "restaurantId": "00000000-0000-0000-0000-000000000001",
                       "customerEmail": "bob@example.com",
-                      "targetDate": "2026-09-01",
+                      "targetDate": "%s",
                       "earliestTime": "18:00:00",
                       "latestTime": "21:00:00",
                       "partySize": 4
                     }
-                """))
+                """, futureDate)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(id.toString()))
                 .andExpect(jsonPath("$.customerEmail").value("bob@example.com"));
@@ -70,5 +74,28 @@ class WaitingListControllerWebMvcTest {
         mockMvc.perform(post("/api/v1/waiting-list/offers/" + offerId + "/accept"))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.detail").value("Offer has expired"));
+    }
+
+    @Test
+    void shouldGetWaitingListEntries() throws Exception {
+        UUID restId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        LocalDate targetDate = LocalDate.now().plusDays(2);
+        WaitingListEntryEntity entry = new WaitingListEntryEntity(
+                entryId, restId, UUID.randomUUID(), "manager-check@example.com",
+                targetDate, LocalTime.of(19, 0), LocalTime.of(21, 0), 2, "WAITING", Instant.now()
+        );
+
+        when(waitingListService.getWaitingList(eq(restId), any(), any()))
+                .thenReturn(List.of(entry));
+
+        mockMvc.perform(get("/api/v1/waiting-list")
+                .param("restaurantId", restId.toString())
+                .param("targetDate", targetDate.toString())
+                .param("status", "WAITING"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(entryId.toString()))
+                .andExpect(jsonPath("$[0].customerEmail").value("manager-check@example.com"))
+                .andExpect(jsonPath("$[0].status").value("WAITING"));
     }
 }

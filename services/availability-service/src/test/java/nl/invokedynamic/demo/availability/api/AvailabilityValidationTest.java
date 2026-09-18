@@ -95,4 +95,55 @@ class AvailabilityValidationTest {
                 .andExpect(jsonPath("$.title").value("Resource Not Found"))
                 .andExpect(jsonPath("$.detail", containsString("Restaurant not found")));
     }
+
+    @Test
+    void shouldReturnBadRequestWhenCustomerChecksPastAvailability() throws Exception {
+        UUID restId = UUID.randomUUID();
+        when(availabilityService.checkAvailability(eq(restId), eq(LocalDate.of(2020, 1, 1)), eq(LocalTime.of(19, 0)), eq(2)))
+                .thenThrow(new IllegalArgumentException("Dining time cannot be in the past"));
+
+        mockMvc.perform(get("/api/v1/availability")
+                .param("restaurantId", restId.toString())
+                .param("date", "2020-01-01")
+                .param("time", "19:00:00")
+                .param("partySize", "2"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.invalidParams[0].name").value("time"))
+                .andExpect(jsonPath("$.invalidParams[0].reason").value("Dining time cannot be in the past"));
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenCustomerChecksTimeWithinMinimumAdvanceWindow() throws Exception {
+        UUID restId = UUID.randomUUID();
+        when(availabilityService.checkAvailability(eq(restId), eq(LocalDate.of(2026, 9, 20)), eq(LocalTime.of(19, 0)), eq(2)))
+                .thenThrow(new IllegalArgumentException("Dining time must be at least 30 minutes in advance"));
+
+        mockMvc.perform(get("/api/v1/availability")
+                .param("restaurantId", restId.toString())
+                .param("date", "2026-09-20")
+                .param("time", "19:00:00")
+                .param("partySize", "2"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation Failed"))
+                .andExpect(jsonPath("$.invalidParams[0].name").value("time"))
+                .andExpect(jsonPath("$.invalidParams[0].reason").value("Dining time must be at least 30 minutes in advance"));
+    }
+
+    @Test
+    void shouldReturnOkWhenManagerChecksPastAvailability() throws Exception {
+        UUID restId = UUID.randomUUID();
+        when(availabilityService.checkAvailability(eq(restId), eq(LocalDate.of(2020, 1, 1)), eq(LocalTime.of(19, 0)), eq(2)))
+                .thenReturn(new AvailabilityService.AvailabilityResult(
+                        restId, "2020-01-01T19:00:00+01:00[Europe/Amsterdam]", 2, true, List.of("2020-01-01T19:00:00+01:00")
+                ));
+
+        mockMvc.perform(get("/api/v1/availability")
+                .param("restaurantId", restId.toString())
+                .param("date", "2020-01-01")
+                .param("time", "19:00:00")
+                .param("partySize", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isAvailable").value(true));
+    }
 }

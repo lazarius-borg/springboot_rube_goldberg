@@ -75,6 +75,13 @@ public class ReservationEntity {
         this.updatedAt = updatedAt;
     }
 
+    public ReservationEntity(UUID id, UUID restaurantId, UUID customerId, String customerName, String customerEmail,
+                             int partySize, Instant startTime, Instant endTime, String status,
+                             int cancellationWindowHours, Instant createdAt, Instant updatedAt, String cancellationReason) {
+        this(id, restaurantId, customerId, customerName, customerEmail, partySize, startTime, endTime, status, cancellationWindowHours, createdAt, updatedAt);
+        this.cancellationReason = cancellationReason;
+    }
+
     public UUID getId() { return id; }
     public UUID getRestaurantId() { return restaurantId; }
     public UUID getCustomerId() { return customerId; }

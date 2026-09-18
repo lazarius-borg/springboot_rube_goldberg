@@ -15,6 +15,10 @@
     <name>restaurant-service</name>
     <description>Restaurant Service for Spring Boot Rube Goldberg</description>
 
+    <properties>
+        <jib.skip>false</jib.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>nl.invokedynamic.demo</groupId>
@@ -23,6 +27,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-restclient</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -107,6 +115,15 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <configuration>
+                    <container>
+                        <mainClass>nl.invokedynamic.demo.restaurant.RestaurantServiceApplication</mainClass>
+                    </container>
+                </configuration>
             </plugin>
         </plugins>
     </build>

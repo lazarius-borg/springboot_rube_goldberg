@@ -83,4 +83,22 @@ public class ValidationExceptionHandler {
         pd.setTitle("Validation Failed");
         return ResponseEntity.badRequest().body(pd);
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ProblemDetail> handleIllegalArgument(IllegalArgumentException ex) {
+        String msg = ex.getMessage() != null ? ex.getMessage() : "Invalid argument";
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, msg);
+        pd.setType(VALIDATION_ERROR_TYPE);
+        pd.setTitle("Validation Failed");
+
+        String paramName = "targetDate";
+        String lower = msg.toLowerCase();
+        if (lower.contains("earliest")) {
+            paramName = "earliestTime";
+        } else if (lower.contains("latest") || lower.contains("window")) {
+            paramName = "latestTime";
+        }
+        pd.setProperty("invalidParams", List.of(Map.of("name", paramName, "reason", msg)));
+        return ResponseEntity.badRequest().body(pd);
+    }
 }
