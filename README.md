@@ -56,7 +56,7 @@ The repository is organized as a standard Maven Reactor multi-module project und
 springboot_rube_goldberg/
 ├── common/
 │   └── event-contracts/        # Shared domain event records (ReservationCreatedEvent, etc.)
-├── gateway/                    # Spring Cloud Gateway (Port 8080) with Rate Limiting & Web UI
+├── gateway/                    # Spring Cloud Gateway (Port 8080) with Rate Limiting & Web Portals (src/main/resources/static/ui/)
 ├── services/
 │   ├── customer-service/       # Customer Profiles & Keycloak identity mapping (Port 8082)
 │   ├── restaurant-service/     # Establishments, opening hours & table combinations (Port 8083)
@@ -65,7 +65,6 @@ springboot_rube_goldberg/
 │   ├── waiting-list-service/   # Fair FIFO waitlist & cascading offer matchmaker (Port 8086)
 │   ├── analytics-service/      # Asynchronous KPI & conversion rate metrics (Port 8087)
 │   └── notification-service/   # Mailpit email notifications & 24h reminder scheduler (Port 8088)
-├── ui/                         # Lightweight browser portals (Customer & Manager)
 ├── infrastructure/             # Docker Compose, Keycloak, Prometheus, Grafana, OpenSearch configs
 └── k8s/                        # Production Kubernetes manifests and Kustomize overlays
 ```
@@ -421,7 +420,7 @@ curl -s -H "Authorization: Bearer $MANAGER_TOKEN" \
 
 ## 🖥️ Web Portals
 
-The application includes lightweight, interactive responsive web interfaces served via the API Gateway:
+The application includes lightweight, interactive responsive web interfaces served directly from the API Gateway (`gateway/src/main/resources/static/ui/`):
 - **Customer Portal**: `http://localhost:8080/ui/customer/index.html` (Check availability, book tables, join waiting list)
 - **Manager Portal**: `http://localhost:8080/ui/manager/index.html` (Real-time live operational analytics)
 
