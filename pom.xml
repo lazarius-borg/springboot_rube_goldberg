@@ -26,6 +26,8 @@
         <springdoc.version>2.8.5</springdoc.version>
         <jackson.version>2.18.2</jackson.version>
         <jib-maven-plugin.version>3.4.4</jib-maven-plugin.version>
+        <jib.skip>true</jib.skip>
+        <jib.target.architecture>amd64</jib.target.architecture>
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
     </properties>
@@ -158,13 +160,53 @@
                     <configuration>
                         <from>
                             <image>eclipse-temurin:26-jre-alpine</image>
+                            <platforms>
+                                <platform>
+                                    <architecture>${jib.target.architecture}</architecture>
+                                    <os>linux</os>
+                                </platform>
+                            </platforms>
                         </from>
                         <to>
                             <image>springboot-rube-goldberg/${project.artifactId}:${project.version}</image>
+                            <tags>
+                                <tag>latest</tag>
+                            </tags>
                         </to>
                     </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>arch-arm64-aarch64</id>
+            <activation>
+                <os>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <properties>
+                <jib.target.architecture>arm64</jib.target.architecture>
+            </properties>
+        </profile>
+        <profile>
+            <id>arch-arm64-arm64</id>
+            <activation>
+                <os>
+                    <arch>arm64</arch>
+                </os>
+            </activation>
+            <properties>
+                <jib.target.architecture>arm64</jib.target.architecture>
+            </properties>
+        </profile>
+    </profiles>
 </project>

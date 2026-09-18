@@ -15,6 +15,10 @@
     <name>gateway</name>
     <description>Spring Cloud API Gateway for Spring Boot Rube Goldberg</description>
 
+    <properties>
+        <jib.skip>false</jib.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -52,6 +56,15 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>com.google.cloud.tools</groupId>
+                <artifactId>jib-maven-plugin</artifactId>
+                <configuration>
+                    <container>
+                        <mainClass>nl.invokedynamic.demo.gateway.GatewayApplication</mainClass>
+                    </container>
+                </configuration>
             </plugin>
         </plugins>
     </build>

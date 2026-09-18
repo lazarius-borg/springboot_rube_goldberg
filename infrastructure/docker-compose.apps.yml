@@ -1,10 +1,6 @@
 services:
   gateway:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: gateway/target/gateway-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/gateway:${IMAGE_TAG:-latest}
     container_name: rube-gateway
     ports:
       - "8080:8080"
@@ -27,11 +23,7 @@ services:
       - keycloak
 
   customer-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: services/customer-service/target/customer-service-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/customer-service:${IMAGE_TAG:-latest}
     container_name: rube-customer-service
     ports:
       - "8082:8082"
@@ -53,11 +45,7 @@ services:
         condition: service_healthy
 
   restaurant-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: services/restaurant-service/target/restaurant-service-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/restaurant-service:${IMAGE_TAG:-latest}
     container_name: rube-restaurant-service
     ports:
       - "8083:8083"
@@ -80,11 +68,7 @@ services:
         condition: service_healthy
 
   availability-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: services/availability-service/target/availability-service-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/availability-service:${IMAGE_TAG:-latest}
     container_name: rube-availability-service
     ports:
       - "8084:8084"
@@ -110,11 +94,7 @@ services:
         condition: service_healthy
 
   reservation-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: services/reservation-service/target/reservation-service-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/reservation-service:${IMAGE_TAG:-latest}
     container_name: rube-reservation-service
     ports:
       - "8085:8085"
@@ -137,11 +117,7 @@ services:
         condition: service_healthy
 
   waiting-list-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: services/waiting-list-service/target/waiting-list-service-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/waiting-list-service:${IMAGE_TAG:-latest}
     container_name: rube-waiting-list-service
     ports:
       - "8086:8086"
@@ -164,11 +140,7 @@ services:
         condition: service_healthy
 
   notification-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: services/notification-service/target/notification-service-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/notification-service:${IMAGE_TAG:-latest}
     container_name: rube-notification-service
     ports:
       - "8088:8088"
@@ -194,11 +166,7 @@ services:
         condition: service_started
 
   analytics-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.service
-      args:
-        JAR_FILE: services/analytics-service/target/analytics-service-1.0.0-SNAPSHOT.jar
+    image: springboot-rube-goldberg/analytics-service:${IMAGE_TAG:-latest}
     container_name: rube-analytics-service
     ports:
       - "8087:8087"

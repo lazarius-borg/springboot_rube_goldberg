@@ -188,20 +188,24 @@ This is the recommended workflow when developing or debugging individual microse
 ---
 
 ### Option B: Full-Stack Docker Compose (Infrastructure + All Microservices)
-Run the entire platform including all 8 microservices and frontend portals in Docker.
+Run the entire platform including all 8 microservices and frontend portals in Docker. Container images are built directly into the local Docker daemon using Google Jib (`jib-maven-plugin`) without requiring Dockerfiles:
 
-> [!IMPORTANT]
-> The service Dockerfiles copy the pre-built Spring Boot executable JARs from each module's `target/` directory (e.g. `services/restaurant-service/target/restaurant-service-1.0.0-SNAPSHOT.jar`). Therefore, you **must package the Maven artifacts first** before invoking `docker compose` to build the container images:
-
-1. **Package All Microservices (Build Executable JARs)**:
+1. **Build Container Images with Jib**:
    ```bash
-   ./mvnw clean package -DskipTests
+   ./mvnw package jib:dockerBuild -DskipTests
    ```
-   *(Or `./mvnw clean package` to run all unit and slice tests during the packaging).*
+   *(Or `./mvnw package jib:dockerBuild` to run all unit and slice tests during the build).*  
+   This compiles all modules, packages project dependencies, and builds container images directly into the local Docker daemon (`springboot-rube-goldberg/<service>:latest` and `:1.0.0-SNAPSHOT`) for all 8 microservices. Non-runnable modules (root POM and `common/event-contracts`) are automatically skipped or bundled as dependencies.
 
-2. **Build Container Images and Start Full Stack**:
+   > [!TIP]
+   > **Native Host Architecture Support**: Jib automatically detects the host architecture (building native `arm64` on Apple Silicon / ARM64 machines and `amd64` on x86_64 / Intel hosts), eliminating Docker platform mismatch warnings and emulation overhead. You can explicitly override the target architecture if needed:
+   > ```bash
+   > ./mvnw package jib:dockerBuild -DskipTests -Djib.target.architecture=amd64
+   > ```
+
+2. **Start Full Stack**:
    ```bash
-   docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.apps.yml up --build -d
+   docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.apps.yml up -d
    ```
 
 3. **Check Running Containers**:
