@@ -75,16 +75,16 @@ springboot_rube_goldberg/
 
 Every microservice exposes **Micrometer Metrics** and **Spring Boot Actuator Probes**, and domain services with REST APIs expose interactive **OpenAPI / Swagger UI**:
 
-| Service | Port | Database | Swagger UI URL | Health Endpoint |
-| :--- | :--- | :--- | :--- | :--- |
-| **API Gateway** | `8080` | Redis (Caching) | [Gateway UI](http://localhost:8080/ui/customer/index.html) | `http://localhost:8080/actuator/health` |
-| **Customer Service** | `8082` | `customer_db` | [Customer Swagger UI](http://localhost:8082/swagger-ui.html) | `http://localhost:8082/actuator/health` |
-| **Restaurant Service** | `8083` | `restaurant_db` | [Restaurant Swagger UI](http://localhost:8083/swagger-ui.html) | `http://localhost:8083/actuator/health` |
-| **Availability Service** | `8084` | `availability_db` | [Availability Swagger UI](http://localhost:8084/swagger-ui.html) | `http://localhost:8084/actuator/health` |
-| **Reservation Service** | `8085` | `reservation_db` | [Reservation Swagger UI](http://localhost:8085/swagger-ui.html) | `http://localhost:8085/actuator/health` |
-| **Waiting List Service**| `8086` | `waiting_list_db` | [Waiting List Swagger UI](http://localhost:8086/swagger-ui.html) | `http://localhost:8086/actuator/health` |
-| **Analytics Service** | `8087` | `analytics_db` | [Analytics Swagger UI](http://localhost:8087/swagger-ui.html) | `http://localhost:8087/actuator/health` |
-| **Notification Service**| `8088` | `notification_db` | _N/A (Event consumer — no REST APIs)_ | `http://localhost:8088/actuator/health` |
+| Service | HTTP Port | Debug Port | Database | Swagger UI URL | Health Endpoint |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **API Gateway** | `8080` | `5080` | Redis (Caching) | [Gateway UI](http://localhost:8080/ui/customer/index.html) | `http://localhost:8080/actuator/health` |
+| **Customer Service** | `8082` | `5082` | `customer_db` | [Customer Swagger UI](http://localhost:8082/swagger-ui.html) | `http://localhost:8082/actuator/health` |
+| **Restaurant Service** | `8083` | `5083` | `restaurant_db` | [Restaurant Swagger UI](http://localhost:8083/swagger-ui.html) | `http://localhost:8083/actuator/health` |
+| **Availability Service** | `8084` | `5084` | `availability_db` | [Availability Swagger UI](http://localhost:8084/swagger-ui.html) | `http://localhost:8084/actuator/health` |
+| **Reservation Service** | `8085` | `5085` | `reservation_db` | [Reservation Swagger UI](http://localhost:8085/swagger-ui.html) | `http://localhost:8085/actuator/health` |
+| **Waiting List Service**| `8086` | `5086` | `waiting_list_db` | [Waiting List Swagger UI](http://localhost:8086/swagger-ui.html) | `http://localhost:8086/actuator/health` |
+| **Analytics Service** | `8087` | `5087` | `analytics_db` | [Analytics Swagger UI](http://localhost:8087/swagger-ui.html) | `http://localhost:8087/actuator/health` |
+| **Notification Service**| `8088` | `5088` | `notification_db` | _N/A (Event consumer — no REST APIs)_ | `http://localhost:8088/actuator/health` |
 
 ### Supporting Infrastructure Port Reference:
 - **Keycloak OIDC**: `http://localhost:8081` (Admin: `admin` / `admin`)
@@ -216,6 +216,80 @@ Run the entire platform including all 8 microservices and frontend portals in Do
    ```bash
    docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.apps.yml down
    ```
+
+---
+
+### Remote Debugging Containerized Services
+
+When running the full stack with Docker Compose (`Option B`), each microservice container is automatically configured with a Java Debug Wire Protocol (JDWP) socket agent. This allows developers to attach an IDE debugger to any running container on `localhost` without restarting the application or rebuilding container images.
+
+#### Debug Port Reference Table
+
+Debug ports follow an intuitive 1:1 mapping with HTTP ports (`808x` -> `508x`), bound to `localhost` with zero port collisions:
+
+| Service | Container Name | HTTP Port | Host & Container Debug Port | Target Module |
+| :--- | :--- | :--- | :--- | :--- |
+| **API Gateway** | `rube-gateway` | `8080` | `5080` | `gateway` |
+| **Customer Service** | `rube-customer-service` | `8082` | `5082` | `services/customer-service` |
+| **Restaurant Service** | `rube-restaurant-service` | `8083` | `5083` | `services/restaurant-service` |
+| **Availability Service** | `rube-availability-service` | `8084` | `5084` | `services/availability-service` |
+| **Reservation Service** | `rube-reservation-service` | `8085` | `5085` | `services/reservation-service` |
+| **Waiting List Service**| `rube-waiting-list-service` | `8086` | `5086` | `services/waiting-list-service` |
+| **Analytics Service** | `rube-analytics-service` | `8087` | `5087` | `services/analytics-service` |
+| **Notification Service**| `rube-notification-service` | `8088` | `5088` | `services/notification-service` |
+
+#### Connecting from Your IDE
+
+##### 1. IntelliJ IDEA
+1. Open **Run** → **Edit Configurations...**
+2. Click **+** (Add New Configuration) and select **Remote JVM Debug**.
+3. Configure the following parameters:
+   - **Name**: e.g., `Debug Reservation Service`
+   - **Debugger mode**: `Attach to remote JVM`
+   - **Host**: `localhost`
+   - **Port**: Target debug port (e.g. `5085` for Reservation Service)
+   - **Use module classpath**: Select the corresponding submodule (e.g. `reservation-service`)
+4. Click **Apply** and then **Debug** (`Shift+F9`).
+5. IntelliJ will log: `Connected to the target VM, address: 'localhost:<port>', transport: 'socket'`.
+
+##### 2. Visual Studio Code
+Ensure the **Extension Pack for Java** is installed, then add an attach configuration to `.vscode/launch.json`:
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Attach: Reservation Service",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 5085
+    }
+  ]
+}
+```
+Select the configuration from the Run & Debug panel (`Cmd+Shift+D` / `Ctrl+Shift+D`) and start debugging (`F5`).
+
+##### 3. Eclipse
+1. Open **Run** → **Debug Configurations...**
+2. Select **Remote Java Application** and click **New launch configuration**.
+3. Configure:
+   - **Project**: Browse and select the project (e.g. `reservation-service`).
+   - **Connection Type**: `Standard (Socket Attach)`.
+   - **Host**: `localhost`.
+   - **Port**: Target debug port (e.g. `5085`).
+4. Click **Debug**.
+
+#### Operational Guidelines & Debugger Behavior
+- **Non-Blocking Execution (`suspend=n`)**: Services initialize and start accepting traffic immediately without waiting for a debugger connection. Docker health probes and Actuator endpoints operate continuously with zero delay.
+- **Setting Breakpoints & Stepping**: Set standard line breakpoints in controllers, services, listeners, or repositories. When hit, execution pauses for inspection of thread stacks, method arguments, and heap variables. Resuming execution (`F9` / Continue) allows the request or transaction to complete normally.
+- **Concurrent Debugging**: You can attach independent debugger sessions to multiple services simultaneously (e.g., attach to `gateway` on port `5080` and `restaurant-service` on port `5083`) to trace distributed flows.
+- **Debugger Detachment**: You can disconnect the debugger at any time. Detaching gracefully releases thread suspension and does not restart or crash the containerized JVM.
+- **Port Conflict Troubleshooting**: If a debug port is occupied on the host (reporting `port is already allocated`), identify and terminate the conflicting local process or override the port mapping in `infrastructure/docker-compose.apps.yml`.
+- **Applying Configuration Changes**: Changing JVM options or published ports in Compose requires container recreation:
+  ```bash
+  docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.apps.yml up -d
+  ```
 
 ---
 

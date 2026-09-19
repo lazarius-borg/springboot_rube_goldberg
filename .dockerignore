@@ -1,11 +1,6 @@
-.git
-.gitignore
-**/target/classes
-**/target/test-classes
-**/target/maven-status
-**/target/generated-sources
-**/target/surefire-reports
-.idea
-*.iml
-.vscode
+target/
+.git/
+.idea/
+.vscode/
+*.log*
 .DS_Store
