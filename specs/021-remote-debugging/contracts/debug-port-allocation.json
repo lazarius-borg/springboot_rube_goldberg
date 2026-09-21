@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RemoteDebuggingPortMatrix",
+  "description": "Port allocation, JDWP options, and Docker Compose configuration contract for remote debugging",
+  "type": "object",
+  "required": ["version", "convention", "services"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "convention": {
+      "type": "string",
+      "const": "HTTP 808x -> Debug 508x (1:1 host-to-container mapping)"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "service",
+          "containerName",
+          "httpPort",
+          "debugPort",
+          "publishedPorts",
+          "jdwpAddress",
+          "javaToolOptions"
+        ],
+        "properties": {
+          "service": { "type": "string" },
+          "containerName": { "type": "string" },
+          "httpPort": { "type": "integer" },
+          "debugPort": { "type": "integer" },
+          "publishedPorts": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "jdwpAddress": { "type": "string" },
+          "javaToolOptions": { "type": "string" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "manifest": [
+      {
+        "service": "gateway",
+        "containerName": "rube-gateway",
+        "httpPort": 8080,
+        "debugPort": 5080,
+        "publishedPorts": ["8080:8080", "5080:5080"],
+        "jdwpAddress": "*:5080",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5080"
+      },
+      {
+        "service": "customer-service",
+        "containerName": "rube-customer-service",
+        "httpPort": 8082,
+        "debugPort": 5082,
+        "publishedPorts": ["8082:8082", "5082:5082"],
+        "jdwpAddress": "*:5082",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5082"
+      },
+      {
+        "service": "restaurant-service",
+        "containerName": "rube-restaurant-service",
+        "httpPort": 8083,
+        "debugPort": 5083,
+        "publishedPorts": ["8083:8083", "5083:5083"],
+        "jdwpAddress": "*:5083",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5083"
+      },
+      {
+        "service": "availability-service",
+        "containerName": "rube-availability-service",
+        "httpPort": 8084,
+        "debugPort": 5084,
+        "publishedPorts": ["8084:8084", "5084:5084"],
+        "jdwpAddress": "*:5084",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5084"
+      },
+      {
+        "service": "reservation-service",
+        "containerName": "rube-reservation-service",
+        "httpPort": 8085,
+        "debugPort": 5085,
+        "publishedPorts": ["8085:8085", "5085:5085"],
+        "jdwpAddress": "*:5085",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5085"
+      },
+      {
+        "service": "waiting-list-service",
+        "containerName": "rube-waiting-list-service",
+        "httpPort": 8086,
+        "debugPort": 5086,
+        "publishedPorts": ["8086:8086", "5086:5086"],
+        "jdwpAddress": "*:5086",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5086"
+      },
+      {
+        "service": "analytics-service",
+        "containerName": "rube-analytics-service",
+        "httpPort": 8087,
+        "debugPort": 5087,
+        "publishedPorts": ["8087:8087", "5087:5087"],
+        "jdwpAddress": "*:5087",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5087"
+      },
+      {
+        "service": "notification-service",
+        "containerName": "rube-notification-service",
+        "httpPort": 8088,
+        "debugPort": 5088,
+        "publishedPorts": ["8088:8088", "5088:5088"],
+        "jdwpAddress": "*:5088",
+        "javaToolOptions": "-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5088"
+      }
+    ]
+  }
+}

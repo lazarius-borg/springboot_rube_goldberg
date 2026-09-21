@@ -4,8 +4,9 @@ services:
     container_name: rube-gateway
     ports:
       - "8080:8080"
+      - "5080:5080"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5080
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8080
       - REDIS_HOST=redis
@@ -27,8 +28,9 @@ services:
     container_name: rube-customer-service
     ports:
       - "8082:8082"
+      - "5082:5082"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5082
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8082
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/customer_db
@@ -49,8 +51,9 @@ services:
     container_name: rube-restaurant-service
     ports:
       - "8083:8083"
+      - "5083:5083"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5083
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8083
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/restaurant_db
@@ -72,8 +75,9 @@ services:
     container_name: rube-availability-service
     ports:
       - "8084:8084"
+      - "5084:5084"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5084
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8084
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/availability_db
@@ -98,8 +102,9 @@ services:
     container_name: rube-reservation-service
     ports:
       - "8085:8085"
+      - "5085:5085"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5085
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8085
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/reservation_db
@@ -121,8 +126,9 @@ services:
     container_name: rube-waiting-list-service
     ports:
       - "8086:8086"
+      - "5086:5086"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5086
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8086
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/waiting_list_db
@@ -144,8 +150,9 @@ services:
     container_name: rube-notification-service
     ports:
       - "8088:8088"
+      - "5088:5088"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5088
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8088
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/notification_db
@@ -170,8 +177,9 @@ services:
     container_name: rube-analytics-service
     ports:
       - "8087:8087"
+      - "5087:5087"
     environment:
-      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+      - JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5087
       - SPRING_PROFILES_ACTIVE=docker
       - SERVER_PORT=8087
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/analytics_db

@@ -14,12 +14,32 @@ saved_objects = []
 # ==============================================================================
 # 1. Index Pattern: otel-logs (T005)
 # ==============================================================================
+otel_logs_fields = [
+    {"name": "@timestamp", "type": "date", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "timestamp", "type": "date", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "serviceName", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "serviceName.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "severity", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "severity.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "severity.text", "type": "string", "searchable": True, "aggregatable": False, "readFromDocValues": False},
+    {"name": "severity.text.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "severity.number", "type": "number", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "traceId", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "spanId", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "statusCode", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "statusCode.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "message", "type": "string", "searchable": True, "aggregatable": False, "readFromDocValues": False},
+    {"name": "body", "type": "string", "searchable": True, "aggregatable": False, "readFromDocValues": False},
+    {"name": "body.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True}
+]
+
 saved_objects.append({
     "id": "otel-logs",
     "type": "index-pattern",
     "attributes": {
         "title": "otel-logs*",
-        "timeFieldName": "timestamp"
+        "timeFieldName": "timestamp",
+        "fields": json.dumps(otel_logs_fields)
     }
 })
 
@@ -356,12 +376,28 @@ saved_objects.append({
 # ==============================================================================
 
 # T011: ss4o_traces (Index Pattern)
+ss4o_traces_fields = [
+    {"name": "@timestamp", "type": "date", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "startTime", "type": "date", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "endTime", "type": "date", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "serviceName", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "serviceName.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "name", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "name.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "durationInNanos", "type": "number", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "statusCode", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "statusCode.keyword", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "traceId", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True},
+    {"name": "spanId", "type": "string", "searchable": True, "aggregatable": True, "readFromDocValues": True}
+]
+
 saved_objects.append({
     "id": "ss4o_traces",
     "type": "index-pattern",
     "attributes": {
         "title": "ss4o_traces-*",
-        "timeFieldName": "startTime"
+        "timeFieldName": "startTime",
+        "fields": json.dumps(ss4o_traces_fields)
     }
 })
 
